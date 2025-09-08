@@ -2,7 +2,7 @@
 
 **Visually create and edit block-style architecture diagrams and export them as Mermaid block-beta syntax.**
 
-Mermaid Block-Beta Architect is a web-based tool that bridges the gap between visual diagramming and text-based Mermaid diagrams. Design your system architecture by drawing and arranging blocks on a canvas, and instantly get Mermaid block-beta syntax that you can use in documentation, GitHub, or any Mermaid-compatible system.
+Mermaid Block Architect is a web-based tool that bridges the gap between visual diagramming and text-based Mermaid diagrams. Design your system architecture by drawing and arranging blocks on a canvas, and instantly get Mermaid block-beta syntax that you can use in documentation, GitHub, or any Mermaid-compatible system.
 
 Key Features
 ------------

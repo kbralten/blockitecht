@@ -37,6 +37,7 @@ blockitecht/
    - `parseBlockDiagramInput()`: Parses Mermaid syntax → internal blocks
    - `generateMermaidBlockDiagram()`: Converts blocks → Mermaid syntax
    - Supports columns, nesting, connections, spaces
+   - **Must conform to Mermaid block-beta syntax** See [the mermaid docs](https://docs.mermaidchart.com/mermaid-oss/syntax/block.html)
 
 3. **UI Components** (lines 100-250)
    - Dual-panel layout (canvas + output)
