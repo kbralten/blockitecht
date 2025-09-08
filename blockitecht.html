@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blockitect - Mermaid Block Diagram Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Basic layout and utility styles to replace Tailwind */
+        :root{
+            --bg: #f3f4f6; /* gray-100 */
+            --text: #1f2937; /* gray-800 */
+            --muted: #6b7280; /* gray-500 */
+            --panel-bg: #ffffff;
+            --primary: #2563eb; /* blue-600 */
+            --primary-600: #1d4ed8;
+            --danger: #ef4444;
+            --success: #16a34a;
+            --purple: #7c3aed;
+        }
+        html,body,#app{height:100%;}
+        body{background:var(--bg);color:var(--text);margin:0}
+
+        .app-root{display:flex;flex-direction:column;height:100vh}
+        header.app-header{background:var(--panel-bg);box-shadow:0 1px 3px rgba(0,0,0,0.06);padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+        .header-left{display:flex;align-items:center;gap:12px}
+        .header-left h1{font-size:1.25rem;margin:0;font-weight:700}
+        input.title-input{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;outline:none;width:16rem}
+        input.title-input:focus{box-shadow:0 0 0 3px rgba(37,99,235,0.12);border-color:var(--primary)}
+
+        .header-actions{display:flex;align-items:center;gap:8px}
+        .btn{border:none;padding:8px 12px;border-radius:8px;color:white;font-weight:600;cursor:pointer}
+        .btn.secondary{background:#6b7280}
+        .btn.primary{background:var(--primary)}
+        .btn.ghost{background:transparent;color:var(--text);border:1px solid transparent}
+        .btn.danger{background:var(--danger)}
+        .btn.purple{background:var(--purple)}
+        .btn:disabled{opacity:0.6;cursor:not-allowed}
+
+        main.app-main{display:flex;flex:1;padding:16px;gap:16px;overflow:hidden}
+        .panel{background:var(--panel-bg);border-radius:12px;box-shadow:0 6px 18px rgba(15,23,42,0.06);display:flex;flex-direction:column;overflow:hidden}
+        .panel .panel-header{padding:8px 12px;border-bottom:1px solid #e5e7eb}
+        .panel .panel-body{padding:8px;flex:1;overflow:auto}
+
+        .canvas-panel{flex:1;display:flex;flex-direction:column}
+        #canvas-container{position:relative;flex:1;overflow:auto}
+        canvas#canvas{position:absolute;top:0;left:0}
+        textarea#text-editor{position:absolute;z-index:10;display:none}
+
+        .md-panel{width:33%;min-width:220px;display:flex;flex-direction:column}
+        textarea#markdown-output{width:100%;height:100%;padding:8px;border:0;border-radius:6px;background:#f8fafc;font-family:monospace;font-size:0.85rem}
+
+        /* Grid background (kept from original) */
+        .grid-bg {
+            background-image:
+                linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+                linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .context-menu {
+            display: none;
+            position: absolute;
+            z-index: 1000;
+            background: var(--panel-bg);
+            border:1px solid #d1d5db;
+            border-radius:8px;
+            box-shadow:0 8px 24px rgba(0,0,0,0.08);
+            min-width:180px;
+            padding:4px 4px;
+        }
+        .context-menu.show { display:block }
+        .context-menu button{background:transparent;border:none;padding:8px 10px;width:100%;text-align:left;cursor:pointer;border-radius:6px}
+        .context-menu button:hover{background:#f3f4f6}
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;inset:0;background-color:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px
+        }
+        .modal-content{background:var(--panel-bg);padding:16px;border-radius:10px;width:min(720px,100%);box-shadow:0 10px 25px rgba(0,0,0,0.12)}
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Minimal Tailwind-like utility fallbacks used in the markup */
+        .hidden{display:none!important}
+        .flex{display:flex}
+        .block{display:block}
+        .items-center{align-items:center}
+        .justify-between{justify-content:space-between}
+        .text-left{text-align:left}
+        .text-right{text-align:right}
+        .text-center{text-align:center}
+
+        .w-full{width:100%}
+        .h-24{height:6rem}
+        .h-32{height:8rem}
+        .h-48{height:12rem}
+
+        .px-4{padding-left:1rem;padding-right:1rem}
+        .py-2{padding-top:0.5rem;padding-bottom:0.5rem}
+        .p-2{padding:0.5rem}
+        .p-1{padding:0.25rem}
+        .p-4{padding:1rem}
+        .pt-4{padding-top:1rem}
+        .mb-4{margin-bottom:1rem}
+        .mt-6{margin-top:1.5rem}
+        .mt-2{margin-top:0.5rem}
+        .space-y-4 > * + *{margin-top:1rem}
+        .space-x-2 > * + *{margin-left:0.5rem}
+        .space-x-4 > * + *{margin-left:1rem}
+
+        .border{border:1px solid #e5e7eb}
+        .border-t{border-top:1px solid #e5e7eb}
+        .border-2{border-width:2px}
+        .border-gray-300{border-color:#d1d5db}
+        .bg-white{background:#ffffff}
+        .bg-gray-50{background:#f9fafb}
+        .bg-gray-100{background:#f3f4f6}
+
+        .rounded-md{border-radius:6px}
+        .rounded-lg{border-radius:8px}
+        .shadow-lg{box-shadow:0 8px 24px rgba(0,0,0,0.08)}
+
+        .text-sm{font-size:0.875rem}
+        .text-xl{font-size:1.25rem}
+        .font-bold{font-weight:700}
+        .font-medium{font-weight:500}
+        .font-mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace}
+        .font-sans{font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+
+        .text-gray-700{color:#374151}
+        .text-gray-500{color:#6b7280}
+        .text-red-600{color:#dc2626}
+        .text-red-500{color:#ef4444}
+        .text-white{color:#fff}
+
+        .hover\:bg-gray-100:hover{background:#f3f4f6}
+        .hover\:bg-gray-600:hover{background:#4b5563}
+        .hover\:bg-blue-700:hover{background:#1d4ed8}
+        .hover\:bg-green-700:hover{background:#15803d}
+        .hover\:bg-purple-700:hover{background:#6d28d9}
+        .hover\:text-gray-800:hover{color:#1f2937}
+
+        .transition{transition:all 0.15s ease}
+        .overflow-y-auto{overflow-y:auto}
+        .resize-none{resize:none}
+        .focus\:outline-none:focus{outline:none}
+
+    </style>
+</head>
+<body>
+    <div class="app-root" id="app">
+        <header class="app-header">
+            <div class="header-left">
+                <h1>Blockitect</h1>
+                <input type="text" id="diagram-title" placeholder="Enter Diagram Title" class="title-input">
+            </div>
+            <div class="header-actions">
+                <button id="load-markdown" class="btn secondary">Load Block Diagram</button>
+                <button id="clear-canvas" class="btn danger">Clear Canvas</button>
+                <button id="copy-markdown" class="btn primary">Copy Mermaid</button>
+            </div>
+        </header>
+
+        <main class="app-main">
+            <!-- Canvas Area -->
+            <div class="panel canvas-panel">
+                <div class="panel-header">
+                    <h2 style="margin:0;font-size:1rem;font-weight:600">Diagram Canvas</h2>
+                </div>
+                <div id="canvas-container" class="panel-body grid-bg">
+                    <canvas id="canvas"></canvas>
+                    <textarea id="text-editor" style="z-index:10"></textarea>
+                </div>
+            </div>
+
+            <!-- Mermaid Block Diagram Output -->
+            <div class="panel md-panel">
+                 <div class="panel-header"><h2 style="margin:0;font-size:1rem;font-weight:600">Mermaid Block Diagram</h2></div>
+                <div class="panel-body">
+                    <textarea id="markdown-output" readonly></textarea>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu">
+        <button id="split-h">Split Horizontally</button>
+        <button id="split-v">Split Vertically</button>
+        <button id="merge">Merge Blocks</button>
+        <button id="delete" style="color:var(--danger)">Delete Block</button>
+    </div>
+
+    <!-- AI features removed -->
+    
+    <!-- Load Block Diagram Modal -->
+    <div id="load-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h2 style="font-size:1.125rem;font-weight:700;margin:0">Load Block Diagram</h2>
+                <button id="close-load-modal" style="background:transparent;border:none;font-size:1.25rem;cursor:pointer">&times;</button>
+            </div>
+            <div>
+                <label for="load-input" style="display:block;font-size:0.9rem;color:var(--muted)">Paste your Mermaid block diagram here:</label>
+                <textarea id="load-input" class="w-full h-48 p-2 border border-gray-300 rounded-lg mt-1 font-mono text-sm" placeholder="block&#10;columns 3&#10;  A&#10;  B&#10;  C"></textarea>
+            </div>
+            <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb">
+                <button id="load-confirm-btn" class="btn primary">Load Diagram</button>
+            </div>
+            <p id="load-error" style="color:var(--danger);font-size:0.9rem;margin-top:8px;text-align:right" class="hidden"></p>
+        </div>
+    </div>
+
+
+    <script>
+        // --- DOM ELEMENT REFERENCES ---
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const canvasContainer = document.getElementById('canvas-container');
+        const markdownOutput = document.getElementById('markdown-output');
+        const copyMarkdownBtn = document.getElementById('copy-markdown');
+        const clearCanvasBtn = document.getElementById('clear-canvas');
+        const diagramTitleInput = document.getElementById('diagram-title');
+        const textEditor = document.getElementById('text-editor');
+
+        const contextMenu = document.getElementById('context-menu');
+        const splitHBtn = document.getElementById('split-h');
+        const splitVBtn = document.getElementById('split-v');
+        const mergeBtn = document.getElementById('merge');
+        const deleteBtn = document.getElementById('delete');
+
+    // AI elements removed
+
+        const loadModal = document.getElementById('load-modal');
+        const loadMarkdownBtn = document.getElementById('load-markdown');
+        const closeLoadModalBtn = document.getElementById('close-load-modal');
+        const loadInput = document.getElementById('load-input');
+        const loadConfirmBtn = document.getElementById('load-confirm-btn');
+        const loadError = document.getElementById('load-error');
+
+        // --- STATE VARIABLES ---
+        const gridSize = 20;
+        let blocks = [];
+        let selectedBlocks = new Set();
+        let currentBlock = null, editingBlock = null, activeContextMenuBlock = null;
+        let drawing = false, dragging = false, resizing = false;
+        let startX, startY, dragOffsetX, dragOffsetY, resizeHandle;
+        let dragStartStates = new Map();
+
+        // AI features removed
+
+        // --- HELPER & HIERARCHY FUNCTIONS ---
+        const getBlockById = id => blocks.find(b => b.id === id);
+        const getParent = block => block?.parentId ? getBlockById(block.parentId) : null;
+        
+        function getDepth(block) {
+            let depth = 0;
+            let p = getParent(block);
+            while (p) { depth++; p = getParent(p); }
+            return depth;
+        }
+
+        const getTopBlockAtPos = (pos) => {
+            const clickedBlocks = blocks.filter(b => pos.x >= b.x && pos.x <= b.x + b.width && pos.y >= b.y && pos.y <= b.y + b.height);
+            return clickedBlocks.length > 0 ? clickedBlocks.sort((a, b) => getDepth(a) - getDepth(b)).pop() : null;
+        };
+        
+        function getDescendants(rootBlock, allBlocks, includeSelf = false) {
+            const descendants = includeSelf ? [rootBlock] : [];
+            const queue = allBlocks.filter(b => b.parentId === rootBlock.id);
+            const visited = new Set(queue.map(b => b.id));
+            visited.add(rootBlock.id);
+            
+            while(queue.length > 0) {
+                const current = queue.shift();
+                descendants.push(current);
+                const children = allBlocks.filter(b => b.parentId === current.id);
+                for(const child of children) {
+                    if(!visited.has(child.id)) {
+                        visited.add(child.id);
+                        queue.push(child);
+                    }
+                }
+            }
+            return descendants;
+        }
+
+        const isAncestor = (ancestor, descendant) => {
+            let current = getParent(descendant);
+            while (current) {
+                if (current.id === ancestor.id) return true;
+                current = getParent(current);
+            }
+            return false;
+        };
+
+        // --- DRAWING FUNCTIONS ---
+        const resizeCanvas = () => { canvas.width = canvasContainer.clientWidth; canvas.height = canvasContainer.clientHeight; draw(); };
+        
+        function drawBlocks() {
+            const sortedBlocks = [...blocks].sort((a, b) => getDepth(a) - getDepth(b));
+            sortedBlocks.forEach(block => {
+                const isParent = blocks.some(b => b.parentId === block.id);
+                ctx.fillStyle = selectedBlocks.has(block) ? 'rgba(59, 130, 246, 0.3)' : isParent ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)';
+                ctx.fillRect(block.x, block.y, block.width, block.height);
+                ctx.strokeStyle = isParent ? '#059669' : '#3B82F6';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(block.x, block.y, block.width, block.height);
+                ctx.fillStyle = '#1F2937';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.font = '14px Inter';
+                const lines = block.text.split('\\n');
+                const startYPos = block.y + 8;
+                lines.forEach((line, i) => ctx.fillText(line, block.x + block.width / 2, startYPos + i * 16));
+            });
+            selectedBlocks.forEach(drawResizeHandles);
+        }
+        
+        function drawResizeHandles(block) {
+            const size = 8, h = size / 2;
+            const {x, y, width, height} = block, midX = x + width/2, midY = y + height/2;
+            const handles = [ {x, y}, {x: midX, y}, {x: x+width, y}, {x, y: midY}, {x: x+width, y: midY}, {x, y: y+height}, {x: midX, y: y+height}, {x: x+width, y: y+height}];
+            ctx.fillStyle = '#3B82F6';
+            handles.forEach(p => ctx.fillRect(p.x - h, p.y - h, size, size));
+        }
+
+        const draw = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); drawBlocks(); };
+        
+        // --- EVENT HANDLERS & LOGIC ---
+        const snapToGrid = value => Math.round(value / gridSize) * gridSize;
+        const getMousePos = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+        
+        function isOverResizeHandle(pos, block) {
+            if (!selectedBlocks.has(block)) return null;
+            const h = 4, {x, y, width, height} = block, midX = x+width/2, midY = y+height/2;
+            const inRange = (val, min, max) => val >= min-h && val <= max+h;
+            if(inRange(pos.x, x, x) && inRange(pos.y, y, y)) return 'nw';
+            if(inRange(pos.x, x+width, x+width) && inRange(pos.y, y, y)) return 'ne';
+            if(inRange(pos.x, x, x) && inRange(pos.y, y+height, y+height)) return 'sw';
+            if(inRange(pos.x, x+width, x+width) && inRange(pos.y, y+height, y+height)) return 'se';
+            if(inRange(pos.x, midX, midX) && inRange(pos.y, y, y)) return 'n';
+            if(inRange(pos.x, midX, midX) && inRange(pos.y, y+height, y+height)) return 's';
+            if(inRange(pos.x, x, x) && inRange(pos.y, midY, midY)) return 'w';
+            if(inRange(pos.x, x+width, x+width) && inRange(pos.y, midY, midY)) return 'e';
+            return null;
+        }
+
+        function hasOverlap(targetBlock, ignoreSet = new Set()) {
+            for (const block of blocks) {
+                if (block === targetBlock || ignoreSet.has(block) || isAncestor(targetBlock, block) || isAncestor(block, targetBlock)) continue;
+                if (targetBlock.x < block.x + block.width && targetBlock.x + targetBlock.width > block.x && targetBlock.y < block.y + block.height && targetBlock.y + targetBlock.height > block.y) return true;
+            }
+            return false;
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            hideTextEditor();
+            const pos = getMousePos(e);
+            dragStartStates.clear();
+            let topBlock = getTopBlockAtPos(pos);
+            if (topBlock) {
+                resizeHandle = isOverResizeHandle(pos, topBlock);
+                if (e.button === 2) { e.preventDefault(); activeContextMenuBlock = topBlock; showContextMenu(e.clientX, e.clientY); return; }
+                if (resizeHandle) {
+                    resizing = true; currentBlock = topBlock;
+                    dragStartStates.set(topBlock, { ...topBlock });
+                } else {
+                    dragging = true; currentBlock = topBlock;
+                    if (!e.ctrlKey && !e.shiftKey && !selectedBlocks.has(topBlock)) { selectedBlocks.clear(); selectedBlocks.add(topBlock); }
+                    else if (e.ctrlKey || e.shiftKey) { selectedBlocks.has(topBlock) ? selectedBlocks.delete(topBlock) : selectedBlocks.add(topBlock); }
+                    dragOffsetX = pos.x - topBlock.x; dragOffsetY = pos.y - topBlock.y;
+                    selectedBlocks.forEach(b => dragStartStates.set(b, { ...b }));
+                }
+            } else {
+                if (!e.ctrlKey && !e.shiftKey) selectedBlocks.clear();
+                if (e.button !== 2) {
+                    drawing = true; startX = snapToGrid(pos.x); startY = snapToGrid(pos.y);
+                    currentBlock = { id: crypto.randomUUID(), parentId: null, x: startX, y: startY, width: 0, height: 0, text: 'New Block' };
+                    blocks.push(currentBlock);
+                }
+            }
+            hideContextMenu(); draw();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const pos = getMousePos(e);
+            if (!dragging && !drawing) {
+                const topBlock = getTopBlockAtPos(pos);
+                let cursor = 'default';
+                if(topBlock) {
+                    const handle = isOverResizeHandle(pos, topBlock);
+                    if (handle) {
+                        if (['n', 's'].includes(handle)) cursor = 'ns-resize';
+                        else if (['e', 'w'].includes(handle)) cursor = 'ew-resize';
+                        else if (['nw', 'se'].includes(handle)) cursor = 'nwse-resize';
+                        else cursor = 'nesw-resize';
+                    } else cursor = 'move';
+                }
+                canvas.style.cursor = cursor;
+            }
+
+            if (drawing) {
+                currentBlock.width = Math.max(gridSize, snapToGrid(pos.x) - startX);
+                currentBlock.height = Math.max(gridSize, snapToGrid(pos.y) - startY);
+            } else if (dragging) {
+                const dx = snapToGrid(pos.x - dragOffsetX) - currentBlock.x;
+                const dy = snapToGrid(pos.y - dragOffsetY) - currentBlock.y;
+                const allToMove = new Set();
+                selectedBlocks.forEach(b => getDescendants(b, blocks, true).forEach(d => allToMove.add(d)));
+                allToMove.forEach(b => { b.x += dx; b.y += dy; });
+            } else if (resizing) {
+                const o = dragStartStates.get(currentBlock), s = {x: snapToGrid(pos.x), y: snapToGrid(pos.y)};
+                let {x, y, width, height} = currentBlock;
+                if (resizeHandle.includes('w')) { width = o.x + o.width - s.x; if(width >= gridSize) x = s.x; }
+                if (resizeHandle.includes('e')) width = s.x - o.x;
+                if (resizeHandle.includes('n')) { height = o.y + o.height - s.y; if(height >= gridSize) y = s.y; }
+                if (resizeHandle.includes('s')) height = s.y - o.y;
+                width = Math.max(gridSize, width); height = Math.max(gridSize, height);
+                const children = blocks.filter(b => b.parentId === currentBlock.id);
+                if(children.length > 0) {
+                    const bounds = children.reduce((a,c) => ({minX:Math.min(a.minX,c.x),minY:Math.min(a.minY,c.y),maxX:Math.max(a.maxX,c.x+c.width),maxY:Math.max(a.maxY,c.y+c.height)}),{minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity});
+                    const finalX = resizeHandle.includes('w') ? x : currentBlock.x;
+                    const finalY = resizeHandle.includes('n') ? y : currentBlock.y;
+                    if (width >= bounds.maxX - finalX) { currentBlock.x = x; currentBlock.width = width; }
+                    if (height >= bounds.maxY - finalY) { currentBlock.y = y; currentBlock.height = height; }
+                } else { Object.assign(currentBlock, {x, y, width, height}); }
+            }
+            draw();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+             if (drawing && (currentBlock.width < gridSize || currentBlock.height < gridSize || hasOverlap(currentBlock))) { blocks.pop(); }
+             else if (dragging && currentBlock) {
+                let newParent = null;
+                const {x, y, width, height} = currentBlock, cX = x + width/2, cY = y + height/2;
+                for(const p of blocks.filter(b => b.id !== currentBlock.id && !isAncestor(currentBlock,b))) {
+                    if (cX > p.x && cX < p.x + p.width && cY > p.y && cY < p.y + p.height) {
+                         if (!newParent || (p.width * p.height < newParent.width * newParent.height)) newParent = p;
+                    }
+                }
+                currentBlock.parentId = (newParent && x >= newParent.x && x+width <= newParent.x+newParent.width && y >= newParent.y && y+height <= newParent.y+newParent.height) ? newParent.id : null;
+             } else if ((dragging || resizing) && [...dragStartStates.keys()].some(b => hasOverlap(b, new Set(dragStartStates.keys())))) {
+                dragStartStates.forEach((state, block) => Object.assign(block, state));
+             }
+            drawing = dragging = resizing = false; currentBlock = null; dragStartStates.clear();
+            updateMarkdown(); draw();
+        });
+        
+        canvas.addEventListener('dblclick', e => { const b = getTopBlockAtPos(getMousePos(e)); if(b) showTextEditor(b); });
+        
+        function showTextEditor(block) {
+            editingBlock = block;
+            Object.assign(textEditor.style, { display: 'block', left: `${block.x}px`, top: `${block.y}px`, width: `${block.width}px`, height: `${block.height}px` });
+            textEditor.value = block.text.replace(/\\n/g, '\n'); textEditor.focus(); textEditor.select();
+        }
+        function hideTextEditor() {
+            if (!editingBlock) return;
+            editingBlock.text = textEditor.value.replace(/\n/g, '\\n');
+            editingBlock = null; textEditor.style.display = 'none'; draw(); updateMarkdown();
+        }
+        textEditor.addEventListener('blur', hideTextEditor);
+        textEditor.addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) {e.preventDefault();hideTextEditor();} if(e.key==='Escape'){editingBlock=null;textEditor.style.display='none';draw();}});
+        
+        // --- CONTEXT MENU & ACTIONS ---
+        function showContextMenu(x, y) {
+            Object.assign(contextMenu.style, {left:`${x}px`, top:`${y}px`}); contextMenu.classList.add('show');
+            const canMerge = selectedBlocks.size > 1; mergeBtn.disabled=!canMerge; Object.assign(mergeBtn.style, {cursor:canMerge?'pointer':'not-allowed',opacity:canMerge?1:0.5});
+        }
+        function hideContextMenu() { contextMenu.classList.remove('show'); activeContextMenuBlock = null; }
+        window.addEventListener('click', e => { if (!contextMenu.contains(e.target)) hideContextMenu(); });
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+        const createAndAddBlock = (props) => { blocks.push({ id: crypto.randomUUID(), parentId: activeContextMenuBlock.parentId, text: 'New Block', ...props }); hideContextMenu(); draw(); updateMarkdown(); };
+        splitHBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const h = snapToGrid(activeContextMenuBlock.height/2); createAndAddBlock({ ...activeContextMenuBlock, y: activeContextMenuBlock.y+h, height:activeContextMenuBlock.height-h}); activeContextMenuBlock.height = h; });
+        splitVBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const w = snapToGrid(activeContextMenuBlock.width/2); createAndAddBlock({ ...activeContextMenuBlock, x: activeContextMenuBlock.x+w, width:activeContextMenuBlock.width-w}); activeContextMenuBlock.width = w; });
+        deleteBtn.addEventListener('click', () => { const toDelete = new Set(selectedBlocks.size > 0 ? [...selectedBlocks] : (activeContextMenuBlock ? [activeContextMenuBlock] : [])); if (toDelete.size > 0) deleteBlocks(toDelete); hideContextMenu(); draw(); updateMarkdown(); });
+        mergeBtn.addEventListener('click', () => { if(selectedBlocks.size<=1) return; const arr=[...selectedBlocks], b = arr.reduce((a,c)=>({minX:Math.min(a.minX,c.x),minY:Math.min(a.minY,c.y),maxX:Math.max(a.maxX,c.x+c.width),maxY:Math.max(a.maxY,c.y+c.height)}),{minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity}); const txt = arr.map(c=>c.text).filter(t=>t&&t.trim()!=='New Block').join(' / '); blocks=blocks.filter(c=>!selectedBlocks.has(c)); const newBlock={id:crypto.randomUUID(),parentId:arr[0].parentId,x:b.minX,y:b.minY,width:b.maxX-b.minX,height:b.maxY-b.minY,text:txt||'Merged'}; blocks.push(newBlock); selectedBlocks.clear(); selectedBlocks.add(newBlock); hideContextMenu(); draw(); updateMarkdown(); });
+        
+        // --- HEADER BUTTONS & MERMAID GENERATION ---
+        copyMarkdownBtn.addEventListener('click', () => { markdownOutput.select(); document.execCommand('copy'); const t=copyMarkdownBtn.innerText; copyMarkdownBtn.innerText='Copied!'; setTimeout(()=>copyMarkdownBtn.innerText=t,2000);});
+        clearCanvasBtn.addEventListener('click', () => { blocks=[]; selectedBlocks.clear(); diagramTitleInput.value=''; draw(); updateMarkdown(); });
+        diagramTitleInput.addEventListener('input', updateMarkdown);
+
+        function updateMarkdown() {
+            let title = diagramTitleInput.value.trim();
+            let output = '';
+            if (title) {
+                output += `# ${title}\n\n`;
+            }
+            const topLevelBlocks = blocks.filter(b => !b.parentId);
+            if (topLevelBlocks.length > 0) {
+                output += generateMermaidBlockDiagram(topLevelBlocks);
+            } else {
+                output += 'block\ncolumns 3\n  %% Add blocks to the canvas to generate diagram';
+            }
+            markdownOutput.value = output;
+        }
+
+        function generateMermaidBlockDiagram(blockList) {
+            if (blockList.length === 0) return 'block\ncolumns 1\n  %% Empty diagram';
+            
+            let output = 'block\n';
+            const processed = new Set();
+            const idMapping = new Map(); // Map from internal GUID to readable ID
+            let blockCounter = 1;
+            
+            // Create readable ID mapping
+            function getReadableId(block) {
+                if (idMapping.has(block.id)) {
+                    return idMapping.get(block.id);
+                }
+                
+                // If the block has an originalId from parsing, use it
+                if (block.originalId) {
+                    idMapping.set(block.id, block.originalId);
+                    return block.originalId;
+                }
+                
+                // If the block already has a readable ID (from parsing), keep it
+                if (block.id && /^[a-zA-Z]\w*$/.test(block.id) && !block.id.includes('-')) {
+                    idMapping.set(block.id, block.id);
+                    return block.id;
+                }
+                
+                // Generate a new readable ID
+                const readableId = `block${blockCounter++}`;
+                idMapping.set(block.id, readableId);
+                return readableId;
+            }
+            
+            // Get only top-level blocks (no parentId)
+            const topLevelBlocks = blocks.filter(b => !b.parentId);
+            
+            if (topLevelBlocks.length === 0) {
+                return 'block\ncolumns 1\n  %% No top-level blocks';
+            }
+            
+            // Analyze spatial layout to determine rows and columns
+            function analyzeLayout(blockList) {
+                if (blockList.length === 0) return { rows: [], columns: 1 };
+                
+                // Group blocks by approximate Y position (rows)
+                const tolerance = 40; // pixels tolerance for same row
+                const rows = [];
+                
+                // Sort by Y position first
+                const sortedByY = [...blockList].sort((a, b) => a.y - b.y);
+                
+                for (const block of sortedByY) {
+                    // Find if this block belongs to an existing row
+                    let foundRow = false;
+                    for (const row of rows) {
+                        const avgY = row.reduce((sum, b) => sum + b.y, 0) / row.length;
+                        if (Math.abs(block.y - avgY) <= tolerance) {
+                            row.push(block);
+                            foundRow = true;
+                            break;
+                        }
+                    }
+                    
+                    // Create new row if not found
+                    if (!foundRow) {
+                        rows.push([block]);
+                    }
+                }
+                
+                // Sort blocks within each row by X position (left to right)
+                rows.forEach(row => {
+                    row.sort((a, b) => a.x - b.x);
+                });
+                
+                // Calculate maximum columns needed
+                const maxColumns = Math.max(...rows.map(row => row.length));
+                
+                return { rows, columns: maxColumns };
+            }
+            
+            const { rows, columns } = analyzeLayout(topLevelBlocks);
+            output += `columns ${columns}\n`;
+            
+            // Generate blocks row by row, maintaining spatial relationships
+            for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+                const row = rows[rowIndex];
+                
+                // Create a grid to track which column positions are filled
+                const rowGrid = new Array(columns).fill(null);
+                
+                // Map blocks to their appropriate column positions
+                for (const block of row) {
+                    // Calculate which column this block should be in
+                    const minX = Math.min(...topLevelBlocks.map(b => b.x));
+                    const maxX = Math.max(...topLevelBlocks.map(b => b.x + b.width));
+                    const columnWidth = (maxX - minX) / columns;
+                    const columnIndex = Math.min(Math.floor((block.x - minX) / columnWidth), columns - 1);
+                    
+                    rowGrid[columnIndex] = block;
+                }
+                
+                // Output blocks and spaces for this row
+                for (let colIndex = 0; colIndex < columns; colIndex++) {
+                    const block = rowGrid[colIndex];
+                    
+                    if (!block) {
+                        // Empty column - add space
+                        output += `  space\n`;
+                        continue;
+                    }
+                    
+                    if (processed.has(block.id)) continue;
+                    
+                    const blockId = getReadableId(block);
+                    const blockText = block.text.replace(/\\n/g, ' ').replace(/"/g, '\\"');
+                    
+                    // Check for child blocks
+                    const children = blocks.filter(child => child.parentId === block.id);
+                    
+                    if (children.length > 0) {
+                        // Parent block with children - use block:ID syntax
+                        output += `  block:${blockId}\n`;
+                        
+                        children.forEach(child => {
+                            if (!processed.has(child.id)) {
+                                const childId = getReadableId(child);
+                                const childText = child.text.replace(/\\n/g, ' ').replace(/"/g, '\\"');
+                                if (childText === childId) {
+                                    output += `    ${childId}\n`;
+                                } else {
+                                    output += `    ${childId}["${childText}"]\n`;
+                                }
+                                processed.add(child.id);
+                            }
+                        });
+                        
+                        output += `  end\n`;
+                    } else {
+                        // Simple block
+                        if (blockText === blockId) {
+                            // Just the ID if text matches ID
+                            output += `  ${blockId}\n`;
+                        } else {
+                            // ID with custom text
+                            output += `  ${blockId}["${blockText}"]\n`;
+                        }
+                    }
+                    
+                    processed.add(block.id);
+                }
+            }
+            
+            return output;
+        }
+
+        function deleteBlocks(startingBlocks) {
+            const allToDelete = new Set();
+            startingBlocks.forEach(b => getDescendants(b, blocks, true).forEach(d => allToDelete.add(d.id)));
+            blocks = blocks.filter(b => !allToDelete.has(b.id));
+            selectedBlocks = new Set([...selectedBlocks].filter(b => !allToDelete.has(b.id)));
+        }
+        window.addEventListener('keydown', (e) => { if ((e.key==='Delete'||e.key==='Backspace') && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName) && selectedBlocks.size>0) { e.preventDefault(); deleteBlocks(selectedBlocks); draw(); updateMarkdown(); }});
+        
+        // AI features removed
+
+        // --- LOAD MODAL LOGIC ---
+        loadMarkdownBtn.addEventListener('click', () => { loadInput.value = ''; loadError.classList.add('hidden'); loadModal.classList.remove('hidden'); });
+        closeLoadModalBtn.addEventListener('click', () => loadModal.classList.add('hidden'));
+
+        function parseHtmlToBlocks(htmlString) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlString, 'text/html');
+            const table = doc.querySelector('table');
+            if (!table) return [];
+
+            const parsedBlocks = [];
+            const tempGrid = [];
+            const rows = table.querySelectorAll(':scope > tbody > tr, :scope > tr');
+
+            rows.forEach((row, r) => {
+                if (!tempGrid[r]) tempGrid[r] = [];
+                let currentC = 0;
+                Array.from(row.children).forEach(cell => {
+                    while (tempGrid[r][currentC]) { currentC++; }
+
+                    const colspan = parseInt(cell.getAttribute('colspan') || '1');
+                    const rowspan = parseInt(cell.getAttribute('rowspan') || '1');
+                    const width = colspan * gridSize * 2;
+                    const height = rowspan * gridSize * 2;
+                    const x = currentC * gridSize * 2;
+                    const y = r * gridSize * 2;
+                    
+                    const newBlock = { id: crypto.randomUUID(), parentId: null, x, y, width, height, text: '' };
+
+                    // Handle nested tables first, recursively
+                    const nestedTable = cell.querySelector('table');
+                    if (nestedTable) {
+                        const children = parseHtmlToBlocks(nestedTable.outerHTML);
+                        children.forEach(child => {
+                            child.parentId = newBlock.id;
+                            child.x += newBlock.x;
+                            child.y += newBlock.y;
+                        });
+                        parsedBlocks.push(...children);
+                        nestedTable.parentElement.removeChild(nestedTable); // Remove after parsing
+                    }
+
+                    // Extract text content from the cell (now without the nested table)
+                    let cellText = (cell.innerHTML || "").replace(/<br\s*\/?>/gi, '\\n');
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = cellText;
+                    newBlock.text = (tempDiv.textContent || "").trim();
+
+                    parsedBlocks.push(newBlock);
+
+                    for (let i = r; i < r + rowspan; i++) {
+                        if (!tempGrid[i]) tempGrid[i] = [];
+                        for (let j = currentC; j < currentC + colspan; j++) {
+                            tempGrid[i][j] = newBlock;
+                        }
+                    }
+                    currentC += colspan;
+                });
+            });
+
+            return parsedBlocks; // Return all blocks, unfiltered
+        }
+
+        function parseBlockDiagramInput(input) {
+            // Parse Mermaid block diagram syntax and create blocks
+            
+            // Extract title from block comment or first line
+            const titleMatch = input.match(/^%%\s*(.*?)\s*%%/m) || input.match(/^title:\s*(.*?)$/m);
+            const title = titleMatch ? titleMatch[1].trim() : '';
+            
+            // Extract columns directive
+            const columnsMatch = input.match(/^columns\s+(\d+)\s*$/m);
+            const columnCount = columnsMatch ? parseInt(columnsMatch[1]) : 3; // default to 3 columns
+            
+            // Remove comments, title, block, and columns lines for parsing
+            const cleanInput = input
+                .split('\n')
+                .filter(line => !line.trim().match(/^%%/) && !line.trim().match(/^title:/) && 
+                       !line.trim().match(/^block\s*$/) && !line.trim().match(/^columns\s+\d+\s*$/))
+                .join('\n');
+            
+            // Parse block definitions and connections with nesting support
+            const lines = cleanInput.split('\n');
+            const blockMap = new Map();
+            const connections = [];
+            const parentStack = []; // Stack to track current parent context
+            
+            // Grid positioning based on column count
+            let currentRow = 0;
+            let currentCol = 0;
+            const blockWidth = 120;
+            const blockHeight = 80;
+            const padding = 20;
+            
+            function calculatePosition(row, col) {
+                const x = col * (blockWidth + padding) + 50;
+                const y = row * (blockHeight + padding) + 50;
+                return { x, y };
+            }
+            
+            function createBlock(blockId, label, parentId = null, useGrid = true) {
+                if (blockMap.has(blockId)) return blockMap.get(blockId);
+                
+                let x, y, width = 100, height = 60;
+                
+                if (useGrid && !parentId) {
+                    // Use grid positioning for top-level blocks
+                    const pos = calculatePosition(currentRow, currentCol);
+                    x = pos.x;
+                    y = pos.y;
+                    
+                    // Advance grid position
+                    currentCol++;
+                    if (currentCol >= columnCount) {
+                        currentCol = 0;
+                        currentRow++;
+                    }
+                } else if (parentId) {
+                    // Position child blocks inside parent with proper layout
+                    const parent = blockMap.get(parentId);
+                    if (parent) {
+                        // Count existing children to determine position
+                        const existingChildren = Array.from(blockMap.values()).filter(b => b.parentId === parentId);
+                        const childIndex = existingChildren.length;
+                        
+                        // Layout children in a grid within the parent
+                        const childPadding = 10;
+                        const childWidth = 80;
+                        const childHeight = 40;
+                        const childrenPerRow = Math.max(1, Math.floor((parent.width - 2 * childPadding) / (childWidth + childPadding)));
+                        
+                        const childRow = Math.floor(childIndex / childrenPerRow);
+                        const childCol = childIndex % childrenPerRow;
+                        
+                        x = parent.x + childPadding + childCol * (childWidth + childPadding);
+                        y = parent.y + 30 + childRow * (childHeight + childPadding);
+                        width = childWidth;
+                        height = childHeight;
+                        
+                        // Ensure parent is large enough to contain all children
+                        const requiredWidth = Math.max(120, 2 * childPadding + childrenPerRow * (childWidth + childPadding));
+                        const requiredHeight = Math.max(80, 30 + (childRow + 1) * (childHeight + childPadding) + childPadding);
+                        
+                        parent.width = Math.max(parent.width, requiredWidth);
+                        parent.height = Math.max(parent.height, requiredHeight);
+                    } else {
+                        // Fallback positioning
+                        const pos = calculatePosition(currentRow, currentCol);
+                        x = pos.x;
+                        y = pos.y;
+                    }
+                } else {
+                    // Fallback positioning
+                    const pos = calculatePosition(currentRow, currentCol);
+                    x = pos.x;
+                    y = pos.y;
+                }
+                
+                const block = {
+                    id: blockId,
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height,
+                    text: label || blockId,
+                    parentId: parentId
+                };
+                
+                blockMap.set(blockId, block);
+                return block;
+            }
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmed = line.trim();
+                const indent = line.length - line.trimStart().length;
+                
+                if (!trimmed) continue;
+                
+                // Handle end keyword - pop from parent stack
+                if (trimmed === 'end') {
+                    parentStack.pop();
+                    continue;
+                }
+                
+                // Parse block:ID syntax - starts a new parent block
+                const blockColonMatch = trimmed.match(/^block:(\w+)$/);
+                if (blockColonMatch) {
+                    const [, blockId] = blockColonMatch;
+                    const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
+                    
+                    const block = createBlock(blockId, blockId, currentParent);
+                    block.originalId = blockId;
+                    
+                    parentStack.push(blockId);
+                    continue;
+                }
+                
+                // Parse simple block definitions: blockId["Label"], blockId, space, or blockId_title["Label"]
+                const blockDefMatch = trimmed.match(/^(\w+)(?:\["([^"]+)"\])?$/);
+                const spaceMatch = trimmed.match(/^space(?::(\d+))?$/);
+                
+                if (spaceMatch) {
+                    // Handle space elements - advance grid position without creating blocks
+                    const spaceWidth = spaceMatch[1] ? parseInt(spaceMatch[1]) : 1;
+                    
+                    // Advance grid position by the space width
+                    currentCol += spaceWidth;
+                    while (currentCol >= columnCount) {
+                        currentCol -= columnCount;
+                        currentRow++;
+                    }
+                    continue;
+                }
+                
+                if (blockDefMatch) {
+                    const [, blockId, label] = blockDefMatch;
+                    const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
+                    
+                    const block = createBlock(blockId, label, currentParent);
+                    // Store the original readable ID for round-trip consistency
+                    block.originalId = blockId;
+                    
+                    continue;
+                }
+                
+                // Parse connections: blockA --> blockB or blockA -->|"label"| blockB
+                const connMatch = trimmed.match(/^(\w+)\s*-->\s*(?:\|"([^"]+)"\|\s*)?(\w+)$/);
+                if (connMatch) {
+                    const [, fromId, label, toId] = connMatch;
+                    const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
+                    
+                    // Ensure both blocks exist - don't advance grid for connection-implied blocks
+                    createBlock(fromId, fromId, currentParent, false);
+                    createBlock(toId, toId, currentParent, false);
+                    
+                    connections.push({ from: fromId, to: toId, label: label || '' });
+                    continue;
+                }
+            }
+            
+            // Convert Map to Array for the blocks
+            const newBlocks = Array.from(blockMap.values());
+            
+            // Add connections to blocks
+            connections.forEach(conn => {
+                const fromBlock = newBlocks.find(b => b.id === conn.from);
+                const toBlock = newBlocks.find(b => b.id === conn.to);
+                if (fromBlock && toBlock) {
+                    if (!fromBlock.connections) fromBlock.connections = [];
+                    fromBlock.connections.push({
+                        target: toBlock,
+                        label: conn.label
+                    });
+                }
+            });
+            
+            return { title, blocks: newBlocks };
+        }
+
+        loadConfirmBtn.addEventListener('click', () => {
+            const input = loadInput.value.trim();
+            if (!input) {
+                loadError.innerText = "Input cannot be empty.";
+                loadError.classList.remove('hidden');
+                return;
+            }
+            try {
+                const { title, blocks: newBlocks } = parseBlockDiagramInput(input);
+                diagramTitleInput.value = title;
+                blocks = newBlocks;
+                selectedBlocks.clear();
+                draw();
+                updateMarkdown();
+                loadModal.classList.add('hidden');
+            } catch (error) {
+                console.error("Parsing error:", error);
+                loadError.innerText = error.message;
+                loadError.classList.remove('hidden');
+            }
+        });
+
+
+        // --- TEST HARNESS ---
+        function runRoundTripTest() {
+            console.log('🧪 Starting Round-Trip Test...');
+            
+            // Test cases
+            const testCases = [
+                {
+                    name: 'Simple blocks',
+                    input: `block
+columns 3
+  A["Frontend"]
+  B["Backend"]
+  C["Database"]`
+                },
+                {
+                    name: 'Two column layout',
+                    input: `block
+columns 2
+  A["Top Left"]
+  B["Top Right"]
+  C["Bottom Left"]
+  D["Bottom Right"]`
+                },
+                {
+                    name: 'Nested blocks with multiple children',
+                    input: `block
+columns 1
+  block:block1
+    block2["Inner 1"]
+    block3["Inner 2"]
+  end`
+                },
+                {
+                    name: 'Nested blocks (original test)',
+                    input: `block
+columns 1
+  D
+  block:ID
+    A
+    B["A wide one in the middle"]
+    C
+  end`
+                },
+                {
+                    name: 'Layout with spaces',
+                    input: `block
+columns 3
+  A["Left"]
+  space
+  C["Right"]
+  space
+  B["Center"]
+  space`
+                },
+                {
+                    name: 'Blocks with connections',
+                    input: `block
+columns 2
+  Frontend
+  Backend
+  Frontend --> Backend`
+                }
+            ];
+            
+            testCases.forEach((testCase, index) => {
+                console.log(`\n--- Test ${index + 1}: ${testCase.name} ---`);
+                console.log('Input:', testCase.input);
+                
+                try {
+                    // Step 1: Parse input into blocks
+                    const { title, blocks: parsedBlocks } = parseBlockDiagramInput(testCase.input);
+                    console.log('✅ Parsing successful');
+                    console.log('Parsed blocks with positions:');
+                    parsedBlocks.forEach(b => {
+                        console.log(`  - ${b.id}: "${b.text}" at (${b.x}, ${b.y}) parent: ${b.parentId || 'none'}`);
+                    });
+                    
+                    // Step 2: Simulate the blocks being loaded
+                    const originalBlocks = [...blocks];
+                    blocks = parsedBlocks;
+                    
+                    // Step 3: Generate output from those blocks
+                    const output = generateMermaidBlockDiagram(parsedBlocks);
+                    console.log('Generated output:', output);
+                    
+                    // Step 4: Parse the generated output back
+                    const { blocks: reparsedBlocks } = parseBlockDiagramInput(output);
+                    console.log('✅ Re-parsing successful, blocks:', reparsedBlocks.map(b => ({ id: b.id, text: b.text, parentId: b.parentId })));
+                    
+                    // Step 5: Compare structures
+                    const originalStructure = parsedBlocks.map(b => ({ id: b.id, text: b.text, parentId: b.parentId }));
+                    const reparsedStructure = reparsedBlocks.map(b => ({ id: b.id, text: b.text, parentId: b.parentId }));
+                    
+                    const structuresMatch = JSON.stringify(originalStructure.sort((a,b) => a.id.localeCompare(b.id))) === 
+                                          JSON.stringify(reparsedStructure.sort((a,b) => a.id.localeCompare(b.id)));
+                    
+                    if (structuresMatch) {
+                        console.log('✅ Round-trip successful!');
+                    } else {
+                        console.log('❌ Round-trip failed - structures differ');
+                        console.log('Original:', originalStructure);
+                        console.log('Reparsed:', reparsedStructure);
+                    }
+                    
+                    // Restore original blocks
+                    blocks = originalBlocks;
+                    
+                } catch (error) {
+                    console.error('❌ Test failed:', error);
+                    blocks = originalBlocks;
+                }
+            });
+            
+            console.log('\n🏁 Round-trip tests completed!');
+        }
+        
+        // Add test button to UI (temporary)
+        document.addEventListener('DOMContentLoaded', () => {
+            const testBtn = document.createElement('button');
+            testBtn.innerText = '🧪 Run Tests';
+            testBtn.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 1000; padding: 5px 10px; background: #007acc; color: white; border: none; border-radius: 3px; cursor: pointer;';
+            testBtn.onclick = () => {
+                console.clear();
+                runRoundTripTest();
+                alert('Test results in console (F12)');
+            };
+            document.body.appendChild(testBtn);
+        });
+
+        // --- INITIALIZATION ---
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+    </script>
+</body>
+</html>
+
+
+
+
