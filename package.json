@@ -1,0 +1,19 @@
+{
+  "name": "blockitecht",
+  "version": "1.0.0",
+  "description": "Mermaid Block Diagram Visual Editor",
+  "main": "blockitecht.html",
+  "scripts": {
+    "test": "node test.js",
+    "test:hud": "node tests/hudHarness.js",
+    "test:parse": "node tests/parseHarness.js",
+    "test:all": "node test.js && node tests/hudHarness.js",
+    "test:verbose": "node test.js && node tests/hudHarness.js && echo '✅ All test suites completed successfully'"
+  },
+  "devDependencies": {
+    "jsdom": "^22.1.0"
+  },
+  "keywords": ["mermaid", "diagram", "visual-editor", "block-diagram"],
+  "author": "",
+  "license": "MIT"
+}

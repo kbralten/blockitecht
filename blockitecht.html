@@ -87,6 +87,56 @@
             height: 30px;
             animation: spin 1s linear infinite;
         }
+
+        /* Reused UI classes to replace inline styles */
+        .panel-title { margin:0; font-size:1rem; font-weight:600; }
+        .text-editor { z-index:10; }
+
+        .modal-header-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+        .modal-title { font-size:1.125rem; font-weight:700; margin:0 }
+        .modal-close { background:transparent; border:none; font-size:1.25rem; cursor:pointer }
+        .color-swatches { display:flex; flex-wrap:wrap; gap:8px }
+        .modal-footer-right { display:flex; justify-content:flex-end; margin-top:12px }
+
+        .input-label { display:block; font-size:0.9rem; color:var(--muted) }
+        .load-footer { display:flex; justify-content:flex-end; align-items:center; margin-top:16px; padding-top:12px; border-top:1px solid #e5e7eb }
+        .error-text { color:var(--danger); font-size:0.9rem; margin-top:8px; text-align:right }
+
+        /* Color swatch styles */
+        .color-swatch {
+            width: 34px;
+            height: 34px;
+            border-radius: 6px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .color-swatch:hover {
+            transform: scale(1.06);
+        }
+        .color-swatch.selected {
+            border-color: #111 !important;
+            box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.2);
+        }
+        .color-swatch.clear {
+            background: transparent;
+            border-color: #9CA3AF;
+            color: #374151;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+    /* Color HUD (small swatches near selected block) */
+    .color-hud { position: absolute; display:flex; gap:8px; padding:6px; background: rgba(255,255,255,0.96); border:1px solid #e5e7eb; border-radius:8px; box-shadow:0 8px 20px rgba(15,23,42,0.08); z-index:1500; }
+    .color-hud.hidden { display:none }
+    .color-hud .sw { width:28px; height:28px; border-radius:6px; border:2px solid transparent; cursor:pointer; box-sizing:border-box; transition: all 0.15s ease; }
+    .color-hud .sw:focus { outline:2px solid rgba(0,0,0,0.08) }
+    .color-hud .sw:hover { transform: scale(1.06) }
+    .color-hud .sw.current { border-color: #111; box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.3); }
+    .color-hud .clear-swatch { background: transparent; border-color: #9CA3AF; color: #374151; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
+    .color-hud .color-swatch-hud { border: 2px solid transparent; }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -170,6 +220,8 @@
                 <button id="load-markdown" class="btn secondary">Load Block Diagram</button>
                 <button id="clear-canvas" class="btn danger">Clear Canvas</button>
                 <button id="copy-markdown" class="btn primary">Copy Mermaid</button>
+                <button id="clear-styles" class="btn purple">Clear styles</button>
+                <button id="fit-diagram" class="btn ghost">Fit Diagram</button>
             </div>
         </header>
 
@@ -177,19 +229,21 @@
             <!-- Canvas Area -->
             <div class="panel canvas-panel">
                 <div class="panel-header">
-                    <h2 style="margin:0;font-size:1rem;font-weight:600">Diagram Canvas</h2>
+                    <h2 class="panel-title">Diagram Canvas</h2>
                 </div>
                 <div id="canvas-container" class="panel-body grid-bg">
                     <canvas id="canvas"></canvas>
-                    <textarea id="text-editor" style="z-index:10"></textarea>
+                    <textarea id="text-editor" class="text-editor"></textarea>
+                    <!-- Color HUD: appears near selected block for quick swatches -->
+                    <div id="color-hud" class="color-hud hidden" aria-hidden="true"></div>
                 </div>
             </div>
 
             <!-- Mermaid Block Diagram Output -->
             <div class="panel md-panel">
-                 <div class="panel-header"><h2 style="margin:0;font-size:1rem;font-weight:600">Mermaid Block Diagram</h2></div>
+                 <div class="panel-header"><h2 class="panel-title">Mermaid Block Diagram</h2></div>
                 <div class="panel-body">
-                    <textarea id="markdown-output" readonly></textarea>
+                    <textarea id="markdown-output" readonly title="Generated Mermaid block diagram code"></textarea>
                 </div>
             </div>
         </main>
@@ -200,26 +254,28 @@
         <button id="split-h">Split Horizontally</button>
         <button id="split-v">Split Vertically</button>
         <button id="merge">Merge Blocks</button>
-        <button id="delete" style="color:var(--danger)">Delete Block</button>
+    <button id="delete" class="text-red-500">Delete Block</button>
     </div>
+
+    <!-- Color Palette Modal removed - HUD is used for color changes -->
 
     <!-- AI features removed -->
     
     <!-- Load Block Diagram Modal -->
     <div id="load-modal" class="modal-overlay hidden">
         <div class="modal-content">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <h2 style="font-size:1.125rem;font-weight:700;margin:0">Load Block Diagram</h2>
-                <button id="close-load-modal" style="background:transparent;border:none;font-size:1.25rem;cursor:pointer">&times;</button>
+            <div class="modal-header-row">
+                <h2 class="modal-title">Load Block Diagram</h2>
+                <button id="close-load-modal" class="modal-close">&times;</button>
             </div>
             <div>
-                <label for="load-input" style="display:block;font-size:0.9rem;color:var(--muted)">Paste your Mermaid block diagram here:</label>
+                <label for="load-input" class="input-label">Paste your Mermaid block diagram here:</label>
                 <textarea id="load-input" class="w-full h-48 p-2 border border-gray-300 rounded-lg mt-1 font-mono text-sm" placeholder="block&#10;columns 3&#10;  A&#10;  B&#10;  C"></textarea>
             </div>
-            <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb">
+            <div class="load-footer">
                 <button id="load-confirm-btn" class="btn primary">Load Diagram</button>
             </div>
-            <p id="load-error" style="color:var(--danger);font-size:0.9rem;margin-top:8px;text-align:right" class="hidden"></p>
+            <p id="load-error" class="error-text hidden"></p>
         </div>
     </div>
 
@@ -232,6 +288,7 @@
         const markdownOutput = document.getElementById('markdown-output');
         const copyMarkdownBtn = document.getElementById('copy-markdown');
         const clearCanvasBtn = document.getElementById('clear-canvas');
+    const fitDiagramBtn = document.getElementById('fit-diagram');
         const diagramTitleInput = document.getElementById('diagram-title');
         const textEditor = document.getElementById('text-editor');
 
@@ -253,6 +310,8 @@
         // --- STATE VARIABLES ---
         const gridSize = 20;
         let blocks = [];
+    // Disable autosave during initialization to avoid overwriting existing storage with empty state
+    let autosaveEnabled = false;
         let selectedBlocks = new Set();
         let currentBlock = null, editingBlock = null, activeContextMenuBlock = null;
         let drawing = false, dragging = false, resizing = false;
@@ -260,6 +319,91 @@
         let dragStartStates = new Map();
 
         // AI features removed
+
+    // --- Color Presets ---
+    // Pleasant pastel palette (12 colors), rearranged to alternate hues (blue, green, orange/pink, ...)
+    // Stored without the leading '#'.
+    const presetColors = ['93C5FD','7DD3A6','FDE68A',  // light blue, light green, light orange
+                           '60A5FA','86EFAC','FCA5A5',  // mid blue, mid green, pink
+                           '7DD3FC','BBF7D0','FCD34D',  // cyan, mint, orange
+                           'C7B8FF','DBEAFE','FDA4FF']; // lavender, pale indigo, magenta
+
+    // --- Friendly Name Generation ---
+    // Generate human-readable block IDs instead of GUIDs
+    let blockCounter = 1;
+    const friendlyNames = [
+        'Task', 'Process', 'Step', 'Action', 'Goal', 'Feature', 'Component', 'Service', 'Module', 'System',
+        'Input', 'Output', 'Data', 'Flow', 'Logic', 'Control', 'Interface', 'Handler', 'Manager', 'Provider',
+        'Builder', 'Factory', 'Helper', 'Utility', 'Container', 'Wrapper', 'Router', 'Filter', 'Parser', 'Validator',
+        'Model', 'View', 'Controller', 'Config', 'Settings', 'Options', 'Params', 'Context', 'State', 'Store',
+        'Queue', 'Stack', 'Cache', 'Buffer', 'Pool', 'Registry', 'Catalog', 'Index', 'Database', 'Repository'
+    ];
+    
+    function generateFriendlyId() {
+        // Try friendly names first, then fall back to numbered blocks
+        if (blockCounter <= friendlyNames.length) {
+            const name = friendlyNames[blockCounter - 1];
+            blockCounter++;
+            
+            // Ensure uniqueness - if name already exists, add a number
+            const baseName = name;
+            let suffix = '';
+            let counter = 1;
+            while (blocks.some(b => b.id === (baseName + suffix))) {
+                suffix = counter.toString();
+                counter++;
+            }
+            return baseName + suffix;
+        } else {
+            // Fall back to Block1, Block2, etc.
+            let id = `Block${blockCounter}`;
+            while (blocks.some(b => b.id === id)) {
+                blockCounter++;
+                id = `Block${blockCounter}`;
+            }
+            blockCounter++;
+            return id;
+        }
+    }
+
+    // --- Color UI & Logic ---
+    // Modal-based color picker removed; HUD provides quick color changes.
+    const clearStylesBtn = document.getElementById('clear-styles');
+
+    // Clear all colors from every block and persist the change
+    if (clearStylesBtn) {
+        clearStylesBtn.addEventListener('click', () => {
+            if (!blocks || blocks.length === 0) return;
+            for (const b of blocks) { if (b && b.color) delete b.color; }
+            draw(); updateMarkdown();
+            // Also persist immediately
+            saveCanvasState();
+        });
+    }
+
+    // Assign colors to a block and its descendants in BFS order using successive palette colors
+    function assignColorsToTree(rootBlock, startIdx) {
+        const queue = [{ node: rootBlock, depth: 0 }];
+        const visited = new Set();
+        while (queue.length > 0) {
+            const { node, depth } = queue.shift();
+            if (!node || visited.has(node.id)) continue;
+            visited.add(node.id);
+            const color = presetColors[(startIdx + depth) % presetColors.length];
+            node.color = '#' + color;
+            // enqueue children
+            const children = blocks.filter(b => b.parentId === node.id);
+            children.forEach(c => queue.push({ node: c, depth: depth + 1 }));
+        }
+    }
+
+    // Remove color property from a block and all its descendants
+    function clearColorsFromTree(rootBlock) {
+        if (!rootBlock) return;
+        const descendants = getDescendants(rootBlock, blocks, true);
+        descendants.forEach(b => { if (b && b.color) delete b.color; });
+    }
+
 
         // --- HELPER & HIERARCHY FUNCTIONS ---
         const getBlockById = id => blocks.find(b => b.id === id);
@@ -307,29 +451,151 @@
         };
 
         // --- DRAWING FUNCTIONS ---
-        const resizeCanvas = () => { canvas.width = canvasContainer.clientWidth; canvas.height = canvasContainer.clientHeight; draw(); };
+        const resizeCanvas = () => {
+            // Start with the visible container size
+            canvas.width = canvasContainer.clientWidth;
+            canvas.height = canvasContainer.clientHeight;
+            // Ensure canvas fits any blocks that extend beyond the visible area
+            ensureCanvasFitsBlocks();
+            draw();
+        };
+
+        // Expand canvas size to include all blocks' extents (do not shrink below container size)
+        function ensureCanvasFitsBlocks() {
+            try {
+                if (!Array.isArray(blocks) || blocks.length === 0) return;
+                const margin = 50;
+                let maxRight = 0, maxBottom = 0;
+                for (const b of blocks) {
+                    const right = (typeof b.x === 'number' ? b.x : 0) + (typeof b.width === 'number' ? b.width : 0);
+                    const bottom = (typeof b.y === 'number' ? b.y : 0) + (typeof b.height === 'number' ? b.height : 0);
+                    if (right > maxRight) maxRight = right;
+                    if (bottom > maxBottom) maxBottom = bottom;
+                }
+                const desiredWidth = Math.max(canvasContainer.clientWidth, Math.ceil(maxRight + margin));
+                const desiredHeight = Math.max(canvasContainer.clientHeight, Math.ceil(maxBottom + margin));
+                if (canvas.width < desiredWidth) canvas.width = desiredWidth;
+                if (canvas.height < desiredHeight) canvas.height = desiredHeight;
+            } catch (e) {
+                // ignore errors during sizing
+            }
+        }
         
         function drawBlocks() {
             const sortedBlocks = [...blocks].sort((a, b) => getDepth(a) - getDepth(b));
             sortedBlocks.forEach(block => {
                 const isParent = blocks.some(b => b.parentId === block.id);
-                ctx.fillStyle = selectedBlocks.has(block) ? 'rgba(59, 130, 246, 0.3)' : isParent ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)';
-                ctx.fillRect(block.x, block.y, block.width, block.height);
-                ctx.strokeStyle = isParent ? '#059669' : '#3B82F6';
+                // If block has color, use it; otherwise fallback to existing scheme
+                if (block.color) {
+                    // fill with color, subtle alpha
+                    ctx.fillStyle = hexToRgba(block.color, 0.15);
+                    ctx.fillRect(block.x, block.y, block.width, block.height);
+                    ctx.strokeStyle = block.color;
+                } else {
+                    ctx.fillStyle = selectedBlocks.has(block) ? 'rgba(59, 130, 246, 0.3)' : isParent ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)';
+                    ctx.fillRect(block.x, block.y, block.width, block.height);
+                    ctx.strokeStyle = isParent ? '#059669' : '#3B82F6';
+                }
                 ctx.lineWidth = 2;
                 ctx.strokeRect(block.x, block.y, block.width, block.height);
-                ctx.fillStyle = '#1F2937';
+                // Always use a dark text color because the palette uses light pastels
+                ctx.fillStyle = '#111827';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
                 ctx.font = '14px Inter';
-                const lines = block.text.split('\\n');
+                const lines = (block.text || '').split('\n');
                 const startYPos = block.y + 8;
                 lines.forEach((line, i) => ctx.fillText(line, block.x + block.width / 2, startYPos + i * 16));
             });
             selectedBlocks.forEach(drawResizeHandles);
         }
+
+    function hexToRgba(hex, alpha) {
+        const h = hex.replace('#','');
+        const r = parseInt(h.substring(0,2),16);
+        const g = parseInt(h.substring(2,4),16);
+        const b = parseInt(h.substring(4,6),16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function getContrastingTextColor(bg) {
+        try {
+            const h = (bg || '#ffffff').replace('#','');
+            const r = parseInt(h.substring(0,2),16);
+            const g = parseInt(h.substring(2,4),16);
+            const b = parseInt(h.substring(4,6),16);
+            // Perceptual luminance
+            const lum = 0.2126 * (r/255) + 0.7152 * (g/255) + 0.0722 * (b/255);
+            return lum > 0.6 ? '#111827' : '#ffffff';
+        } catch (e) { return '#111827'; }
+    }
+    
+    // --- Color HUD logic ---
+    const colorHud = document.getElementById('color-hud');
+    function buildHud() {
+        if (!colorHud) return;
+        colorHud.innerHTML = '';
+        // Clear swatch first
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'sw clear-swatch';
+        clearBtn.title = 'Clear color';
+        clearBtn.innerText = '×';
+        clearBtn.onclick = (e) => { e.stopPropagation(); if (selectedBlocks.size === 0) return; for (const b of [...selectedBlocks]) clearColorsFromTree(b); draw(); updateMarkdown(); };
+        colorHud.appendChild(clearBtn);
+        presetColors.forEach(hex => {
+            const sw = document.createElement('button');
+            sw.className = 'sw color-swatch-hud';
+            sw.style.backgroundColor = '#' + hex;
+            sw.dataset.hex = hex;
+            sw.title = '#' + hex;
+            sw.onclick = (e) => {
+                e.stopPropagation();
+                if (selectedBlocks.size === 0) return;
+                const baseIdx = presetColors.findIndex(h => h.toLowerCase() === hex.toLowerCase());
+                for (const b of [...selectedBlocks]) assignColorsToTree(b, baseIdx >= 0 ? baseIdx : 0);
+                draw(); updateMarkdown();
+            };
+            colorHud.appendChild(sw);
+        });
+    }
+
+    function updateColorHud() {
+        if (!colorHud) return;
+        if (selectedBlocks.size === 0) { colorHud.classList.add('hidden'); return; }
+        if (!colorHud.hasChildNodes()) buildHud();
+        const sel = [...selectedBlocks].sort((a,b)=>getDepth(a)-getDepth(b))[0];
+        if (!sel) { colorHud.classList.add('hidden'); return; }
         
-        function drawResizeHandles(block) {
+        // Highlight current block's color in the HUD
+        const swatches = colorHud.querySelectorAll('.sw');
+        swatches.forEach(sw => sw.classList.remove('current'));
+        
+        if (sel.color) {
+            // Find matching color swatch
+            const targetHex = sel.color.replace('#', '').toLowerCase();
+            const matchingSwatch = Array.from(swatches).find(sw => {
+                const swatchHex = sw.dataset.hex;
+                return swatchHex && swatchHex.toLowerCase() === targetHex;
+            });
+            if (matchingSwatch) {
+                matchingSwatch.classList.add('current');
+            }
+        }
+        
+        // Position the HUD relative to the canvas coordinates
+        // Keep it inside the canvas container
+        const containerRect = canvasContainer.getBoundingClientRect();
+        const x = Math.min(Math.max(8, sel.x + sel.width + 12), containerRect.width - 120);
+        const y = Math.min(Math.max(8, sel.y), containerRect.height - 40);
+        colorHud.style.left = x + 'px';
+        colorHud.style.top = y + 'px';
+        colorHud.classList.remove('hidden');
+    }
+
+    // Hide HUD when clicking outside
+    document.addEventListener('click', (e)=>{ if (colorHud && !colorHud.contains(e.target)) { colorHud.classList.add('hidden'); } });
+
+    function drawResizeHandles(block) {
             const size = 8, h = size / 2;
             const {x, y, width, height} = block, midX = x + width/2, midY = y + height/2;
             const handles = [ {x, y}, {x: midX, y}, {x: x+width, y}, {x, y: midY}, {x: x+width, y: midY}, {x, y: y+height}, {x: midX, y: y+height}, {x: x+width, y: y+height}];
@@ -337,7 +603,14 @@
             handles.forEach(p => ctx.fillRect(p.x - h, p.y - h, size, size));
         }
 
-        const draw = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); drawBlocks(); };
+    function draw() { 
+        // Ensure canvas covers all blocks before drawing so nothing is clipped
+        ensureCanvasFitsBlocks();
+        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        drawBlocks(); 
+        saveCanvasState(); 
+        updateColorHud();
+    }
         
         // --- EVENT HANDLERS & LOGIC ---
         const snapToGrid = value => Math.round(value / gridSize) * gridSize;
@@ -388,7 +661,7 @@
                 if (!e.ctrlKey && !e.shiftKey) selectedBlocks.clear();
                 if (e.button !== 2) {
                     drawing = true; startX = snapToGrid(pos.x); startY = snapToGrid(pos.y);
-                    currentBlock = { id: crypto.randomUUID(), parentId: null, x: startX, y: startY, width: 0, height: 0, text: 'New Block' };
+                    currentBlock = { id: generateFriendlyId(), parentId: null, x: startX, y: startY, width: 0, height: 0, text: 'New Block' };
                     blocks.push(currentBlock);
                 }
             }
@@ -483,16 +756,109 @@
         window.addEventListener('click', e => { if (!contextMenu.contains(e.target)) hideContextMenu(); });
         canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-        const createAndAddBlock = (props) => { blocks.push({ id: crypto.randomUUID(), parentId: activeContextMenuBlock.parentId, text: 'New Block', ...props }); hideContextMenu(); draw(); updateMarkdown(); };
+        const createAndAddBlock = (props) => { blocks.push({ id: generateFriendlyId(), parentId: activeContextMenuBlock.parentId, text: 'New Block', ...props }); hideContextMenu(); draw(); updateMarkdown(); };
         splitHBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const h = snapToGrid(activeContextMenuBlock.height/2); createAndAddBlock({ ...activeContextMenuBlock, y: activeContextMenuBlock.y+h, height:activeContextMenuBlock.height-h}); activeContextMenuBlock.height = h; });
         splitVBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const w = snapToGrid(activeContextMenuBlock.width/2); createAndAddBlock({ ...activeContextMenuBlock, x: activeContextMenuBlock.x+w, width:activeContextMenuBlock.width-w}); activeContextMenuBlock.width = w; });
         deleteBtn.addEventListener('click', () => { const toDelete = new Set(selectedBlocks.size > 0 ? [...selectedBlocks] : (activeContextMenuBlock ? [activeContextMenuBlock] : [])); if (toDelete.size > 0) deleteBlocks(toDelete); hideContextMenu(); draw(); updateMarkdown(); });
-        mergeBtn.addEventListener('click', () => { if(selectedBlocks.size<=1) return; const arr=[...selectedBlocks], b = arr.reduce((a,c)=>({minX:Math.min(a.minX,c.x),minY:Math.min(a.minY,c.y),maxX:Math.max(a.maxX,c.x+c.width),maxY:Math.max(a.maxY,c.y+c.height)}),{minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity}); const txt = arr.map(c=>c.text).filter(t=>t&&t.trim()!=='New Block').join(' / '); blocks=blocks.filter(c=>!selectedBlocks.has(c)); const newBlock={id:crypto.randomUUID(),parentId:arr[0].parentId,x:b.minX,y:b.minY,width:b.maxX-b.minX,height:b.maxY-b.minY,text:txt||'Merged'}; blocks.push(newBlock); selectedBlocks.clear(); selectedBlocks.add(newBlock); hideContextMenu(); draw(); updateMarkdown(); });
+        mergeBtn.addEventListener('click', () => { if(selectedBlocks.size<=1) return; const arr=[...selectedBlocks], b = arr.reduce((a,c)=>({minX:Math.min(a.minX,c.x),minY:Math.min(a.minY,c.y),maxX:Math.max(a.maxX,c.x+c.width),maxY:Math.max(a.maxY,c.y+c.height)}),{minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity}); const txt = arr.map(c=>c.text).filter(t=>t&&t.trim()!=='New Block').join(' / '); blocks=blocks.filter(c=>!selectedBlocks.has(c)); const newBlock={id:generateFriendlyId(),parentId:arr[0].parentId,x:b.minX,y:b.minY,width:b.maxX-b.minX,height:b.maxY-b.minY,text:txt||'Merged'}; blocks.push(newBlock); selectedBlocks.clear(); selectedBlocks.add(newBlock); hideContextMenu(); draw(); updateMarkdown(); });
         
         // --- HEADER BUTTONS & MERMAID GENERATION ---
         copyMarkdownBtn.addEventListener('click', () => { markdownOutput.select(); document.execCommand('copy'); const t=copyMarkdownBtn.innerText; copyMarkdownBtn.innerText='Copied!'; setTimeout(()=>copyMarkdownBtn.innerText=t,2000);});
         clearCanvasBtn.addEventListener('click', () => { blocks=[]; selectedBlocks.clear(); diagramTitleInput.value=''; draw(); updateMarkdown(); });
+    fitDiagramBtn.addEventListener('click', () => { scrollCanvasToFitBlocks(); });
         diagramTitleInput.addEventListener('input', updateMarkdown);
+
+    // --- Persistence: save/load canvas state to localStorage ---
+        const STORAGE_KEY = 'blockitecht.canvas.v1';
+
+        function saveCanvasState() {
+            try {
+                if (!autosaveEnabled) return; // skip saving during initialization
+                // Don't overwrite an existing saved diagram with an empty canvas/title
+                if ((!blocks || blocks.length === 0) && !diagramTitleInput.value.trim()) return;
+                // Create a JSON-safe snapshot of blocks (avoid storing object references in connections)
+                const blocksSnapshot = blocks.map(b => {
+                    const { id, x, y, width, height, text, parentId, blockWidth, originalId, color } = b;
+                    const connections = (b.connections || []).map(c => ({ targetId: (c.target && c.target.id) || c.targetId || null, label: c.label || '' }));
+                    return { id, x, y, width, height, text, parentId, blockWidth, originalId, color, connections };
+                });
+                const payload = { title: diagramTitleInput.value || '', blocks: blocksSnapshot };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+                // Log success for debugging in browser console
+                console.log('Saved canvas state to localStorage (items:', blocksSnapshot.length, ')');
+            } catch (e) { console.warn('Failed to save canvas state', e); }
+        }
+
+        function loadCanvasState() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                if (parsed && Array.isArray(parsed.blocks)) {
+                    // Ensure loaded blocks are snapped to grid (we already snap on manual load too)
+                    const snapFloor = v => Math.floor(v / gridSize) * gridSize;
+                    // Reconstruct blocks (plain objects) from snapshot
+                    const reconstructed = parsed.blocks.map(b => {
+                        return {
+                            id: b.id,
+                            x: typeof b.x === 'number' ? snapFloor(b.x) : 0,
+                            y: typeof b.y === 'number' ? snapFloor(b.y) : 0,
+                            width: typeof b.width === 'number' ? Math.max(gridSize, Math.floor(b.width / gridSize) * gridSize) : gridSize,
+                            height: typeof b.height === 'number' ? Math.max(gridSize, Math.floor(b.height / gridSize) * gridSize) : gridSize,
+                            text: b.text || b.id,
+                            parentId: b.parentId || null,
+                            blockWidth: b.blockWidth || (b.blockWidth === 0 ? 0 : 1),
+                            originalId: b.originalId,
+                            color: b.color || null
+                        };
+                    });
+
+                    // Restore connections by resolving targetId to object references
+                    const byId = new Map(reconstructed.map(b => [b.id, b]));
+                    parsed.blocks.forEach((bSnapshot) => {
+                        if (Array.isArray(bSnapshot.connections) && bSnapshot.connections.length > 0) {
+                            const source = byId.get(bSnapshot.id);
+                            if (!source) return;
+                            source.connections = [];
+                            for (const c of bSnapshot.connections) {
+                                const target = byId.get(c.targetId) || null;
+                                source.connections.push({ target: target, label: c.label || '' });
+                            }
+                        }
+                    });
+
+                    // Restore color property if present
+                    parsed.blocks.forEach(bSnapshot => {
+                        const target = byId.get(bSnapshot.id);
+                        if (target && bSnapshot.color) target.color = bSnapshot.color;
+                    });
+
+                    blocks = reconstructed;
+                    diagramTitleInput.value = parsed.title || '';
+                    selectedBlocks.clear();
+                    draw();
+                    updateMarkdown();
+                    // Scroll container to show the loaded diagram
+                    scrollCanvasToFitBlocks();
+                    console.log('Loaded canvas state from localStorage (items:', blocks.length, ')');
+                    return true;
+                }
+            } catch (e) { console.warn('Failed to load canvas state', e); }
+            return false;
+        }
+
+    // Clear stored state when clearing canvas
+    clearCanvasBtn.addEventListener('click', () => { localStorage.removeItem(STORAGE_KEY); blocks = []; selectedBlocks.clear(); diagramTitleInput.value = ''; draw(); updateMarkdown(); });
+
+        // Load any persisted state on startup and enable autosave afterwards
+        document.addEventListener('DOMContentLoaded', () => {
+            // Resize canvas now that DOM is ready
+            resizeCanvas();
+            const loaded = loadCanvasState();
+            if (loaded) console.log('Loaded saved canvas state from localStorage');
+            // Enable autosave after initial load so we don't overwrite stored state
+            autosaveEnabled = true;
+        });
 
         function updateMarkdown() {
             let title = diagramTitleInput.value.trim();
@@ -507,161 +873,11 @@
                 output += 'block\ncolumns 3\n  %% Add blocks to the canvas to generate diagram';
             }
             markdownOutput.value = output;
+            // Persist canvas state whenever the markdown/diagram is updated
+            saveCanvasState();
         }
 
-        function generateMermaidBlockDiagram(blockList) {
-            if (blockList.length === 0) return 'block\ncolumns 1\n  %% Empty diagram';
-            
-            let output = 'block\n';
-            const processed = new Set();
-            const idMapping = new Map(); // Map from internal GUID to readable ID
-            let blockCounter = 1;
-            
-            // Create readable ID mapping
-            function getReadableId(block) {
-                if (idMapping.has(block.id)) {
-                    return idMapping.get(block.id);
-                }
-                
-                // If the block has an originalId from parsing, use it
-                if (block.originalId) {
-                    idMapping.set(block.id, block.originalId);
-                    return block.originalId;
-                }
-                
-                // If the block already has a readable ID (from parsing), keep it
-                if (block.id && /^[a-zA-Z]\w*$/.test(block.id) && !block.id.includes('-')) {
-                    idMapping.set(block.id, block.id);
-                    return block.id;
-                }
-                
-                // Generate a new readable ID
-                const readableId = `block${blockCounter++}`;
-                idMapping.set(block.id, readableId);
-                return readableId;
-            }
-            
-            // Get only top-level blocks (no parentId)
-            const topLevelBlocks = blocks.filter(b => !b.parentId);
-            
-            if (topLevelBlocks.length === 0) {
-                return 'block\ncolumns 1\n  %% No top-level blocks';
-            }
-            
-            // Analyze spatial layout to determine rows and columns
-            function analyzeLayout(blockList) {
-                if (blockList.length === 0) return { rows: [], columns: 1 };
-                
-                // Group blocks by approximate Y position (rows)
-                const tolerance = 40; // pixels tolerance for same row
-                const rows = [];
-                
-                // Sort by Y position first
-                const sortedByY = [...blockList].sort((a, b) => a.y - b.y);
-                
-                for (const block of sortedByY) {
-                    // Find if this block belongs to an existing row
-                    let foundRow = false;
-                    for (const row of rows) {
-                        const avgY = row.reduce((sum, b) => sum + b.y, 0) / row.length;
-                        if (Math.abs(block.y - avgY) <= tolerance) {
-                            row.push(block);
-                            foundRow = true;
-                            break;
-                        }
-                    }
-                    
-                    // Create new row if not found
-                    if (!foundRow) {
-                        rows.push([block]);
-                    }
-                }
-                
-                // Sort blocks within each row by X position (left to right)
-                rows.forEach(row => {
-                    row.sort((a, b) => a.x - b.x);
-                });
-                
-                // Calculate maximum columns needed
-                const maxColumns = Math.max(...rows.map(row => row.length));
-                
-                return { rows, columns: maxColumns };
-            }
-            
-            const { rows, columns } = analyzeLayout(topLevelBlocks);
-            output += `columns ${columns}\n`;
-            
-            // Generate blocks row by row, maintaining spatial relationships
-            for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-                const row = rows[rowIndex];
-                
-                // Create a grid to track which column positions are filled
-                const rowGrid = new Array(columns).fill(null);
-                
-                // Map blocks to their appropriate column positions
-                for (const block of row) {
-                    // Calculate which column this block should be in
-                    const minX = Math.min(...topLevelBlocks.map(b => b.x));
-                    const maxX = Math.max(...topLevelBlocks.map(b => b.x + b.width));
-                    const columnWidth = (maxX - minX) / columns;
-                    const columnIndex = Math.min(Math.floor((block.x - minX) / columnWidth), columns - 1);
-                    
-                    rowGrid[columnIndex] = block;
-                }
-                
-                // Output blocks and spaces for this row
-                for (let colIndex = 0; colIndex < columns; colIndex++) {
-                    const block = rowGrid[colIndex];
-                    
-                    if (!block) {
-                        // Empty column - add space
-                        output += `  space\n`;
-                        continue;
-                    }
-                    
-                    if (processed.has(block.id)) continue;
-                    
-                    const blockId = getReadableId(block);
-                    const blockText = block.text.replace(/\\n/g, ' ').replace(/"/g, '\\"');
-                    
-                    // Check for child blocks
-                    const children = blocks.filter(child => child.parentId === block.id);
-                    
-                    if (children.length > 0) {
-                        // Parent block with children - use block:ID syntax
-                        output += `  block:${blockId}\n`;
-                        
-                        children.forEach(child => {
-                            if (!processed.has(child.id)) {
-                                const childId = getReadableId(child);
-                                const childText = child.text.replace(/\\n/g, ' ').replace(/"/g, '\\"');
-                                if (childText === childId) {
-                                    output += `    ${childId}\n`;
-                                } else {
-                                    output += `    ${childId}["${childText}"]\n`;
-                                }
-                                processed.add(child.id);
-                            }
-                        });
-                        
-                        output += `  end\n`;
-                    } else {
-                        // Simple block
-                        if (blockText === blockId) {
-                            // Just the ID if text matches ID
-                            output += `  ${blockId}\n`;
-                        } else {
-                            // ID with custom text
-                            output += `  ${blockId}["${blockText}"]\n`;
-                        }
-                    }
-                    
-                    processed.add(block.id);
-                }
-            }
-            
-            return output;
-        }
+        // --- TEST HARNESS ---
 
         function deleteBlocks(startingBlocks) {
             const allToDelete = new Set();
@@ -700,7 +916,7 @@
                     const x = currentC * gridSize * 2;
                     const y = r * gridSize * 2;
                     
-                    const newBlock = { id: crypto.randomUUID(), parentId: null, x, y, width, height, text: '' };
+                    const newBlock = { id: generateFriendlyId(), parentId: null, x, y, width, height, text: '' };
 
                     // Handle nested tables first, recursively
                     const nestedTable = cell.querySelector('table');
@@ -739,8 +955,8 @@
         function parseBlockDiagramInput(input) {
             // Parse Mermaid block diagram syntax and create blocks
             
-            // Extract title from block comment or first line
-            const titleMatch = input.match(/^%%\s*(.*?)\s*%%/m) || input.match(/^title:\s*(.*?)$/m);
+            // Extract title from block comment, title: line, or Markdown heading (lines starting with '#')
+            const titleMatch = input.match(/^%%\s*(.*?)\s*%%/m) || input.match(/^title:\s*(.*?)$/m) || input.match(/^#\s*(.*?)$/m);
             const title = titleMatch ? titleMatch[1].trim() : '';
             
             // Extract columns directive
@@ -748,11 +964,11 @@
             const columnCount = columnsMatch ? parseInt(columnsMatch[1]) : 3; // default to 3 columns
             
             // Remove comments, title, block, and columns lines for parsing
-            const cleanInput = input
-                .split('\n')
-                .filter(line => !line.trim().match(/^%%/) && !line.trim().match(/^title:/) && 
-                       !line.trim().match(/^block\s*$/) && !line.trim().match(/^columns\s+\d+\s*$/))
-                .join('\n');
+         const cleanInput = input
+          .split('\n')
+          .filter(line => !line.trim().match(/^%%/) && !line.trim().match(/^title:/) && !line.trim().match(/^#\s*/) &&
+              !line.trim().match(/^block\s*$/) && !line.trim().match(/^columns\s+\d+\s*$/))
+          .join('\n');
             
             // Parse block definitions and connections with nesting support
             const lines = cleanInput.split('\n');
@@ -773,21 +989,32 @@
                 return { x, y };
             }
             
-            function createBlock(blockId, label, parentId = null, useGrid = true) {
-                if (blockMap.has(blockId)) return blockMap.get(blockId);
-                
+            function createBlock(blockId, label, parentId = null, useGrid = true, widthFactor = 1) {
+                // If block already exists, possibly update its blockWidth and return it
+                if (blockMap.has(blockId)) {
+                    const existing = blockMap.get(blockId);
+                    if (widthFactor && (!existing.blockWidth || widthFactor > existing.blockWidth)) {
+                        existing.blockWidth = widthFactor;
+                    }
+                    return existing;
+                }
+
                 let x, y, width = 100, height = 60;
-                
+                // Determine width factor: prefer explicit param, otherwise default to 1
+                let blockWidthFactor = Math.max(1, widthFactor || 1);
+
                 if (useGrid && !parentId) {
                     // Use grid positioning for top-level blocks
                     const pos = calculatePosition(currentRow, currentCol);
                     x = pos.x;
                     y = pos.y;
-                    
-                    // Advance grid position
-                    currentCol++;
-                    if (currentCol >= columnCount) {
-                        currentCol = 0;
+                    // Apply width factor to block pixel width
+                    width = 100 * blockWidthFactor;
+
+                    // Advance grid position by the width factor (span columns)
+                    currentCol += blockWidthFactor;
+                    while (currentCol >= columnCount) {
+                        currentCol -= columnCount;
                         currentRow++;
                     }
                 } else if (parentId) {
@@ -830,7 +1057,7 @@
                     x = pos.x;
                     y = pos.y;
                 }
-                
+
                 const block = {
                     id: blockId,
                     x: x,
@@ -838,9 +1065,10 @@
                     width: width,
                     height: height,
                     text: label || blockId,
-                    parentId: parentId
+                    parentId: parentId,
+                    blockWidth: blockWidthFactor
                 };
-                
+
                 blockMap.set(blockId, block);
                 return block;
             }
@@ -858,64 +1086,113 @@
                     continue;
                 }
                 
-                // Parse block:ID syntax - starts a new parent block
-                const blockColonMatch = trimmed.match(/^block:(\w+)$/);
+                // Parse block:ID syntax - starts a new parent block (allow hyphens in IDs)
+                // Allow optional label and color annotation after block:ID like `block:ID["Label"] %%color:93C5FD`
+                const blockColonMatch = trimmed.match(/^block:([\w-]+)(?:\["([^\"]*)"\])?(?:\s+%%color:(#?[0-9A-Fa-f]{6}))?$/);
                 if (blockColonMatch) {
-                    const [, blockId] = blockColonMatch;
+                    const [, blockId, labelMatch, colorMatch] = blockColonMatch;
                     const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
-                    
-                    const block = createBlock(blockId, blockId, currentParent);
+
+                    // Create or fetch; if a label is explicitly provided use it, otherwise preserve any existing label
+                    const block = createBlock(blockId, labelMatch || blockId, currentParent);
                     block.originalId = blockId;
-                    
+                    if (labelMatch && labelMatch.trim()) {
+                        block.text = labelMatch;
+                    }
+                    if (colorMatch) {
+                        block.color = colorMatch.startsWith('#') ? colorMatch : '#' + colorMatch;
+                    }
+
                     parentStack.push(blockId);
                     continue;
                 }
                 
-                // Parse simple block definitions: blockId["Label"], blockId, space, or blockId_title["Label"]
-                const blockDefMatch = trimmed.match(/^(\w+)(?:\["([^"]+)"\])?$/);
-                const spaceMatch = trimmed.match(/^space(?::(\d+))?$/);
-                
-                if (spaceMatch) {
-                    // Handle space elements - advance grid position without creating blocks
-                    const spaceWidth = spaceMatch[1] ? parseInt(spaceMatch[1]) : 1;
-                    
-                    // Advance grid position by the space width
-                    currentCol += spaceWidth;
-                    while (currentCol >= columnCount) {
-                        currentCol -= columnCount;
-                        currentRow++;
+                // If this line is a connection (e.g. "A --> B" or "A --> |"label"|B"), parse it
+                // Use a small string-based parser instead of a complex regex literal to avoid
+                // editor/HTML linter issues with escape sequences inside the <script>.
+                const arrowIndex = trimmed.indexOf('-->');
+                if (arrowIndex !== -1) {
+                    const left = trimmed.slice(0, arrowIndex).trim();
+                    let right = trimmed.slice(arrowIndex + 3).trim();
+                    let fromId = left;
+                    let toId = '';
+                    let label = '';
+
+                    // If the right side starts with |" then expect a label of the form |"..."| followed by the target id
+                    if (right.startsWith('|"')) {
+                        const endLabelIdx = right.indexOf('"|', 2);
+                        if (endLabelIdx !== -1) {
+                            label = right.slice(2, endLabelIdx);
+                            toId = right.slice(endLabelIdx + 2).trim();
+                        } else {
+                            // malformed; treat whole right as toId fallback
+                            toId = right;
+                        }
+                    } else {
+                        // No inline label, right side should be the target id
+                        toId = right.split(/\s+/)[0];
                     }
-                    continue;
+
+                    // Validate simple id shapes before accepting (allow hyphens for UUIDs)
+                    if (/^[\w-]+$/.test(fromId) && /^[\w-]+$/.test(toId)) {
+                        const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
+                        // Ensure both blocks exist - don't advance grid for connection-implied blocks
+                        createBlock(fromId, fromId, currentParent, false);
+                        createBlock(toId, toId, currentParent, false);
+                        connections.push({ from: fromId, to: toId, label: label || '' });
+                        continue;
+                    }
+                    // fallthrough to token parsing if it wasn't a valid connection line
                 }
-                
-                if (blockDefMatch) {
-                    const [, blockId, label] = blockDefMatch;
-                    const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
-                    
-                    const block = createBlock(blockId, label, currentParent);
-                    // Store the original readable ID for round-trip consistency
-                    block.originalId = blockId;
-                    
-                    continue;
-                }
-                
-                // Parse connections: blockA --> blockB or blockA -->|"label"| blockB
-                const connMatch = trimmed.match(/^(\w+)\s*-->\s*(?:\|"([^"]+)"\|\s*)?(\w+)$/);
-                if (connMatch) {
-                    const [, fromId, label, toId] = connMatch;
-                    const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
-                    
-                    // Ensure both blocks exist - don't advance grid for connection-implied blocks
-                    createBlock(fromId, fromId, currentParent, false);
-                    createBlock(toId, toId, currentParent, false);
-                    
-                    connections.push({ from: fromId, to: toId, label: label || '' });
-                    continue;
+
+                // Tokenize the trimmed line into block tokens or space tokens so we support multiple
+                // definitions on the same line (e.g. `a["A label"] b:2 c:2 d`). This regex matches
+                // either a space token or a block token (id, optional :width, optional ["label"]).
+                // Tokenize block tokens; allow IDs containing letters, digits, underscore and hyphen
+                const tokenRegex = /(?:space(?::\d+)?)|(?:[\w-]+(?::\d+)?(?:\["[^\"]*"\])?)/g;
+                let match;
+                const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
+                while ((match = tokenRegex.exec(trimmed)) !== null) {
+                    const token = match[0];
+                    // If this token has an inline color annotation following it like '... %%color:#RRGGBB',
+                    // try to capture that from the remaining substring after this token.
+                    let color = null;
+                    const after = trimmed.slice(tokenRegex.lastIndex);
+                    const colorMatch = after.match(/^(?:\s*%%color:(#?[0-9A-Fa-f]{6}))/);
+                    if (colorMatch) {
+                        color = colorMatch[1].startsWith('#') ? colorMatch[1] : '#' + colorMatch[1];
+                        // advance the regex index past the color annotation so it doesn't get reprocessed
+                        tokenRegex.lastIndex += colorMatch[0].length;
+                    }
+                    if (/^space/.test(token)) {
+                        const sm = token.match(/^space(?::(\d+))?$/);
+                        const spaceWidth = sm && sm[1] ? parseInt(sm[1]) : 1;
+                        currentCol += spaceWidth;
+                        while (currentCol >= columnCount) {
+                            currentCol -= columnCount;
+                            currentRow++;
+                        }
+                        continue;
+                    }
+
+                    // Block token
+                    // Allow hyphens in block id (UUIDs include hyphens)
+                    const bm = token.match(/^([\w-]+)(?::(\d+))?(?:\["([^\"]+)"\])?$/);
+                    if (bm) {
+                        const [, blockId, widthStr, label] = bm;
+                        const widthFactor = widthStr ? parseInt(widthStr) : 1;
+                        const blk = createBlock(blockId, label, currentParent, true, widthFactor);
+                        if (color) blk.color = color;
+                    }
                 }
             }
             
             // Convert Map to Array for the blocks
             const newBlocks = Array.from(blockMap.values());
+
+            // Attach original diagram column count to parsed blocks so a generator
+            // can prefer the original `columns N` directive during round-trip.
+            newBlocks.forEach(b => { b._diagramColumns = columnCount; });
             
             // Add connections to blocks
             connections.forEach(conn => {
@@ -933,6 +1210,216 @@
             return { title, blocks: newBlocks };
         }
 
+        // --- Mermaid Generator ---
+        function detectAndCreateVerticalSpans(topLevelBlocks) {
+            // Only apply vertical span detection when there are at least 3 blocks
+            // and there's evidence of a vertical spanning layout
+            if (topLevelBlocks.length < 3) {
+                return topLevelBlocks;
+            }
+            
+            // Group blocks into columns based on X position (with tolerance)
+            const columnTolerance = 50; // px tolerance for column alignment
+            const rowTolerance = 20;    // px tolerance for row alignment
+            
+            // Sort blocks by X position to process columns left to right
+            const sortedBlocks = topLevelBlocks.slice().sort((a, b) => a.x - b.x);
+            const columns = [];
+            
+            // Group blocks into columns
+            for (const block of sortedBlocks) {
+                let placed = false;
+                for (const col of columns) {
+                    // Check if block overlaps horizontally with this column
+                    const colLeft = Math.min(...col.blocks.map(b => b.x));
+                    const colRight = Math.max(...col.blocks.map(b => b.x + b.width));
+                    const blockLeft = block.x;
+                    const blockRight = block.x + block.width;
+                    
+                    // Check for horizontal overlap with proper logic
+                    // Two ranges overlap if: left1 < right2 AND left2 < right1
+                    const overlaps = blockLeft < colRight && colLeft < blockRight;
+                    
+                    if (overlaps) {
+                        col.blocks.push(block);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) {
+                    columns.push({ blocks: [block] });
+                }
+            }
+            
+            // Only proceed if we have exactly 2 columns (classic vertical span scenario)
+            if (columns.length !== 2) {
+                return topLevelBlocks;
+            }
+            
+            // Process each column to detect vertical spans
+            const resultBlocks = [];
+            let invisibleParentCounter = 1;
+            
+            for (const column of columns) {
+                if (column.blocks.length <= 1) {
+                    // Single block column, check if it spans multiple row heights
+                    if (column.blocks.length === 1) {
+                        resultBlocks.push(column.blocks[0]);
+                    }
+                    continue;
+                }
+                
+                // Sort blocks in column by Y position
+                column.blocks.sort((a, b) => a.y - b.y);
+                
+                // Check if this column has blocks that could be grouped opposite a spanning block
+                // Look for 2 or more blocks that are vertically stacked
+                const avgBlockHeight = column.blocks.reduce((sum, b) => sum + b.height, 0) / column.blocks.length;
+                
+                // Check if the other column has a single tall block
+                const otherColumn = columns.find(c => c !== column);
+                const hasSpanningBlock = otherColumn && otherColumn.blocks.length === 1 && 
+                                       otherColumn.blocks[0].height > avgBlockHeight * 1.5;
+                
+                if (hasSpanningBlock && column.blocks.length >= 2) {
+                    // Create invisible parent for this column's blocks
+                    const invisibleParentId = `InvisibleParent${invisibleParentCounter++}`;
+                    const invisibleParent = {
+                        id: invisibleParentId,
+                        text: '', // Empty text makes it invisible
+                        parentId: null,
+                        x: Math.min(...column.blocks.map(b => b.x)),
+                        y: Math.min(...column.blocks.map(b => b.y)),
+                        width: Math.max(...column.blocks.map(b => b.x + b.width)) - Math.min(...column.blocks.map(b => b.x)),
+                        height: Math.max(...column.blocks.map(b => b.y + b.height)) - Math.min(...column.blocks.map(b => b.y)),
+                        _isInvisibleParent: true
+                    };
+                    
+                    // Set parent relationship for all blocks in this column
+                    column.blocks.forEach(block => {
+                        block.parentId = invisibleParentId;
+                    });
+                    
+                    // Add invisible parent to results
+                    resultBlocks.push(invisibleParent);
+                    // Column blocks are now children, they'll be handled by the recursive emission
+                } else {
+                    // No spanning layout detected, add all blocks as-is
+                    resultBlocks.push(...column.blocks);
+                }
+            }
+            
+            return resultBlocks;
+        }
+
+        function generateMermaidBlockDiagram(blockList) {
+            // Accept either a full block list or top-level blocks; normalize to a full list
+            let allBlocks = [];
+            if (Array.isArray(blockList)) {
+                // If caller passed only top-level blocks (no parentId set), prefer the global `blocks`
+                // which contains the full diagram so nested children are included.
+                const looksLikeTopLevelOnly = blockList.length > 0 && blockList.every(b => !b.parentId);
+                if (looksLikeTopLevelOnly && typeof blocks !== 'undefined' && Array.isArray(blocks) && blocks.length > 0) {
+                    allBlocks = blocks.slice();
+                } else {
+                    allBlocks = blockList.slice();
+                }
+            }
+            
+            // Find top-level blocks (those with no parentId)
+            let topLevel = allBlocks.filter(b => !b.parentId);
+
+            // Detect vertical span layouts and create invisible parent blocks
+            topLevel = detectAndCreateVerticalSpans(topLevel);
+            
+            // Update allBlocks to include any new invisible parent blocks
+            const invisibleParents = topLevel.filter(b => b._isInvisibleParent);
+            allBlocks = [...allBlocks, ...invisibleParents];
+            
+            const byId = new Map(allBlocks.map(b => [b.id, b]));
+
+            // Infer unit pixel width for span inference when block.blockWidth is not set
+            const pixelWidths = allBlocks.map(b => b.width || 0).filter(w => w > 0);
+            const unit = pixelWidths.length > 0 ? Math.min(...pixelWidths) : 100;
+
+            function spanFor(block) {
+                if (block.blockWidth && Number.isFinite(block.blockWidth)) return Math.max(1, block.blockWidth);
+                if (block.width && unit > 0) return Math.max(1, Math.round(block.width / unit));
+                return 1;
+            }
+
+            function escapeLabel(s) {
+                if (!s && s !== '') return '';
+                return s.replace(/"/g, '\\"');
+            }
+
+            function emitBlockRecursive(b, indent = '  ') {
+                const children = allBlocks.filter(x => x.parentId === b.id);
+                const lines = [];
+                if (children.length > 0) {
+                    // Start parent block (emit label and color annotation if present)
+                    const colorToken = b.color ? ` %%color:${b.color.replace('#','')}` : '';
+                    
+                    // For invisible parents, don't emit a label (empty text)
+                    const label = (b.text && !b._isInvisibleParent) ? `["${escapeLabel(b.text)}"]` : '';
+                    
+                    lines.push(`${indent}block:${b.id}${label}${colorToken}`);
+                    for (const child of children) {
+                        lines.push(emitBlockRecursive(child, indent + '  '));
+                    }
+                    lines.push(`${indent}end`);
+                } else {
+                    const span = spanFor(b);
+                    const label = b.text ? `["${escapeLabel(b.text)}"]` : '';
+                    // Append color annotation if present using a comment-style token which is easy to parse
+                    const colorToken = b.color ? ` %%color:${b.color.replace('#','')}` : '';
+                    lines.push(`${indent}${b.id}${span > 1 ? `:${span}` : ''}${label}${colorToken}`);
+                }
+                return lines.join('\n');
+            }
+
+            // Build output
+            // If parsed blocks included a `columns N` directive, prefer that value
+            // for round-trip fidelity. Otherwise infer number of columns by grouping
+            // top-level blocks into rows (y-coordinate buckets) and summing their
+            // span (blockWidth) per row. Use the maximum row sum as columns.
+            let columns = null;
+            if (topLevel.length > 0 && typeof topLevel[0]._diagramColumns === 'number') {
+                columns = Math.max(...topLevel.map(b => b._diagramColumns || 0));
+            }
+
+            if (!columns || columns <= 0) {
+                const rowTolerance = 40; // px tolerance to group blocks into the same row
+                const rows = [];
+                for (const b of topLevel) {
+                    let placed = false;
+                    for (const r of rows) {
+                        if (Math.abs(r.y - b.y) <= rowTolerance) {
+                            r.blocks.push(b);
+                            placed = true;
+                            break;
+                        }
+                    }
+                    if (!placed) rows.push({ y: b.y, blocks: [b] });
+                }
+
+                let maxRowSpan = 1;
+                for (const r of rows) {
+                    let rowSum = 0;
+                    for (const b of r.blocks) rowSum += spanFor(b);
+                    maxRowSpan = Math.max(maxRowSpan, rowSum);
+                }
+
+                columns = Math.max(1, Math.round(maxRowSpan));
+            }
+
+            const out = ['block', `columns ${columns}`];
+            for (const t of topLevel) {
+                out.push(emitBlockRecursive(t));
+            }
+            return out.join('\n') + '\n';
+        }
+
         loadConfirmBtn.addEventListener('click', () => {
             const input = loadInput.value.trim();
             if (!input) {
@@ -942,11 +1429,23 @@
             }
             try {
                 const { title, blocks: newBlocks } = parseBlockDiagramInput(input);
+                // Snap loaded blocks to the app grid so they align to the squares
+                // Snap down to nearest grid cell (floor) so blocks align without growing unexpectedly
+                const snapFloor = v => Math.floor(v / gridSize) * gridSize;
+                newBlocks.forEach(b => {
+                    if (typeof b.x === 'number') b.x = snapFloor(b.x);
+                    if (typeof b.y === 'number') b.y = snapFloor(b.y);
+                    if (typeof b.width === 'number') b.width = Math.max(gridSize, Math.floor(b.width / gridSize) * gridSize);
+                    if (typeof b.height === 'number') b.height = Math.max(gridSize, Math.floor(b.height / gridSize) * gridSize);
+                });
+
                 diagramTitleInput.value = title;
                 blocks = newBlocks;
                 selectedBlocks.clear();
                 draw();
                 updateMarkdown();
+                // Scroll to fit newly loaded diagram so users can see all blocks
+                scrollCanvasToFitBlocks();
                 loadModal.classList.add('hidden');
             } catch (error) {
                 console.error("Parsing error:", error);
@@ -954,6 +1453,30 @@
                 loadError.classList.remove('hidden');
             }
         });
+
+        // Scroll the canvas container so the bounding box of blocks is centered in view
+        function scrollCanvasToFitBlocks() {
+            try {
+                if (!blocks || blocks.length === 0) return;
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (const b of blocks) {
+                    if (typeof b.x === 'number') minX = Math.min(minX, b.x);
+                    if (typeof b.y === 'number') minY = Math.min(minY, b.y);
+                    if (typeof b.x === 'number' && typeof b.width === 'number') maxX = Math.max(maxX, b.x + b.width);
+                    if (typeof b.y === 'number' && typeof b.height === 'number') maxY = Math.max(maxY, b.y + b.height);
+                }
+                if (!isFinite(minX) || !isFinite(minY)) return;
+                const boxWidth = Math.max(1, maxX - minX);
+                const boxHeight = Math.max(1, maxY - minY);
+                const centerX = minX + boxWidth / 2;
+                const centerY = minY + boxHeight / 2;
+                // Scroll container so centerX/centerY are centered in viewport
+                const targetScrollLeft = Math.max(0, Math.floor(centerX - canvasContainer.clientWidth / 2));
+                const targetScrollTop = Math.max(0, Math.floor(centerY - canvasContainer.clientHeight / 2));
+                canvasContainer.scrollLeft = targetScrollLeft;
+                canvasContainer.scrollTop = targetScrollTop;
+            } catch (e) { /* ignore */ }
+        }
 
 
         // --- TEST HARNESS ---
@@ -1085,9 +1608,8 @@ columns 2
             document.body.appendChild(testBtn);
         });
 
-        // --- INITIALIZATION ---
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+    // --- INITIALIZATION ---
+    window.addEventListener('resize', resizeCanvas);
     </script>
 </body>
 </html>

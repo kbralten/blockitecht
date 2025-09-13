@@ -128,6 +128,29 @@ node tests/parseHarness.js
    - Block positions are absolute pixel coordinates
    - Parent blocks contain children with relative positioning
 
+## Development Process Guidelines
+
+### Defect Resolution
+- When dealing with a defect or unwanted behaviour:
+  1. First, write a test in `test.js` to replicate the issue.
+  2. Prove the test fails, confirming the defect.
+  3. Implement the fix and ensure the test passes.
+
+### Feature Development
+- When adding a new feature:
+  1. First, write a test in `test.js` that will fail.
+  2. Write the functional code to implement the feature.
+  3. Ensure the test passes after implementation.
+
+### Round-Trip Validation
+- For features that aren't purely UI-related:
+  - Add a test to `test.js` to validate the feature "round trips" through the generator and parser.
+
+### Final Validation
+- After making changes:
+  1. Run a linter pass and validate there are no warnings.
+  2. Run `test.js` and ensure all tests pass.
+
 ### Key Code Areas
 
 **Parser Functions** (lines 739-890):
