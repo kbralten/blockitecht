@@ -2449,18 +2449,18 @@ columns 2
             console.log('\n🏁 Round-trip tests completed!');
         }
         
-        // Add test button to UI (temporary)
-        document.addEventListener('DOMContentLoaded', () => {
-            const testBtn = document.createElement('button');
-            testBtn.innerText = '🧪 Run Tests';
-            testBtn.className = 'test-button';
-            testBtn.onclick = () => {
-                console.clear();
-                runRoundTripTest();
-                alert('Test results in console (F12)');
-            };
-            document.body.appendChild(testBtn);
-        });
+        // // Add test button to UI (temporary)
+        // document.addEventListener('DOMContentLoaded', () => {
+        //     const testBtn = document.createElement('button');
+        //     testBtn.innerText = '🧪 Run Tests';
+        //     testBtn.className = 'test-button';
+        //     testBtn.onclick = () => {
+        //         console.clear();
+        //         runRoundTripTest();
+        //         alert('Test results in console (F12)');
+        //     };
+        //     document.body.appendChild(testBtn);
+        // });
 
     // --- INITIALIZATION ---
     window.addEventListener('resize', resizeCanvas);
