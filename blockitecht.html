@@ -74,6 +74,7 @@
         .context-menu.show { display:block }
         .context-menu button{background:transparent;border:none;padding:8px 10px;width:100%;text-align:left;cursor:pointer;border-radius:6px}
         .context-menu button:hover{background:#f3f4f6}
+    .context-menu .hidden-item{display:none}
         /* Modal Styles */
         .modal-overlay {
             position: fixed;inset:0;background-color:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px
@@ -206,6 +207,45 @@
         .overflow-y-auto{overflow-y:auto}
         .resize-none{resize:none}
         .focus\:outline-none:focus{outline:none}
+        
+        /* Test button styles */
+        .test-button {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            padding: 5px 10px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        /* Arrow mode indicator in header */
+        .arrow-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            background: rgba(37,99,235,0.12);
+            color: #1d4ed8;
+            border: 1px solid rgba(29,78,216,0.12);
+        }
+        .conn-tooltip {
+            position: absolute;
+            z-index: 1600;
+            background: rgba(17,24,39,0.95);
+            color: #fff;
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            white-space: nowrap;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+        }
 
     </style>
 </head>
@@ -222,6 +262,9 @@
                 <button id="copy-markdown" class="btn primary">Copy Mermaid</button>
                 <button id="clear-styles" class="btn purple">Clear styles</button>
                 <button id="fit-diagram" class="btn ghost">Fit Diagram</button>
+                <button id="arrow-mode" class="btn secondary">🔗 Arrow Mode</button>
+                <button id="toggle-ghost-spaces" class="btn ghost">Ghost spaces: On</button>
+                <div id="arrow-indicator" class="arrow-indicator hidden">🔗 Arrow Mode</div>
             </div>
         </header>
 
@@ -255,6 +298,11 @@
         <button id="split-v">Split Vertically</button>
         <button id="merge">Merge Blocks</button>
     <button id="delete" class="text-red-500">Delete Block</button>
+    <button id="delete-connection" class="text-red-500 hidden-item">Delete Connection</button>
+    <button id="edit-connection-label" class="hidden-item">Edit Connection Label</button>
+    <button id="arrow-line" class="hidden-item">Set Line (---)</button>
+    <button id="arrow-forward" class="hidden-item">Set Arrow (-->)</button>
+    <button id="arrow-backward" class="hidden-item">Set Arrow (<--)</button>
     </div>
 
     <!-- Color Palette Modal removed - HUD is used for color changes -->
@@ -270,6 +318,9 @@
             </div>
             <div>
                 <label for="load-input" class="input-label">Paste your Mermaid block diagram here:</label>
+            <!-- Connection tooltip (shows connection label on hover) -->
+            <div id="conn-tooltip" class="conn-tooltip hidden"></div>
+
                 <textarea id="load-input" class="w-full h-48 p-2 border border-gray-300 rounded-lg mt-1 font-mono text-sm" placeholder="block&#10;columns 3&#10;  A&#10;  B&#10;  C"></textarea>
             </div>
             <div class="load-footer">
@@ -289,6 +340,7 @@
         const copyMarkdownBtn = document.getElementById('copy-markdown');
         const clearCanvasBtn = document.getElementById('clear-canvas');
     const fitDiagramBtn = document.getElementById('fit-diagram');
+        const arrowModeBtn = document.getElementById('arrow-mode');
         const diagramTitleInput = document.getElementById('diagram-title');
         const textEditor = document.getElementById('text-editor');
 
@@ -310,11 +362,17 @@
         // --- STATE VARIABLES ---
         const gridSize = 20;
         let blocks = [];
+        let connections = []; // Array to store arrow connections {from: blockId, to: blockId, label?: string}
     // Disable autosave during initialization to avoid overwriting existing storage with empty state
     let autosaveEnabled = false;
         let selectedBlocks = new Set();
         let currentBlock = null, editingBlock = null, activeContextMenuBlock = null;
         let drawing = false, dragging = false, resizing = false;
+    let arrowMode = false, arrowStart = null; // Arrow creation mode
+    let selectedConnections = new Set(); // Set of connection _id strings
+    let connectionCounter = 1; // internal connection id counter
+    let activeContextMenuConnection = null; // connection object for context menu actions
+    let showGhostSpaces = true; // toggle for visualizing space tokens
         let startX, startY, dragOffsetX, dragOffsetY, resizeHandle;
         let dragStartStates = new Map();
 
@@ -508,6 +566,112 @@
                 lines.forEach((line, i) => ctx.fillText(line, block.x + block.width / 2, startYPos + i * 16));
             });
             selectedBlocks.forEach(drawResizeHandles);
+            
+            // Draw arrows/connections
+            drawConnections();
+        }
+
+        function drawConnections() {
+            const blockMap = new Map(blocks.map(b => [b.id, b]));
+            
+            connections.forEach(conn => {
+                const fromBlock = blockMap.get(conn.from);
+                const toBlock = blockMap.get(conn.to);
+                
+                if (!fromBlock || !toBlock) return; // Skip if blocks don't exist
+                
+                const isSelected = conn._id && selectedConnections.has(conn._id);
+                drawArrow(fromBlock, toBlock, conn.label, isSelected, conn.arrowType || '-->');
+            });
+        }
+
+        function drawArrow(fromBlock, toBlock, label, isSelected = false, arrowType = '-->') {
+            // Calculate connection points (center of each block edge)
+            const fromCenter = {
+                x: fromBlock.x + fromBlock.width / 2,
+                y: fromBlock.y + fromBlock.height / 2
+            };
+            const toCenter = {
+                x: toBlock.x + toBlock.width / 2,
+                y: toBlock.y + toBlock.height / 2
+            };
+            
+            // Find edge intersection points
+            const from = getBlockEdgePoint(fromBlock, toCenter);
+            const to = getBlockEdgePoint(toBlock, fromCenter);
+            
+            // Draw arrow line
+            ctx.strokeStyle = isSelected ? '#2563eb' : '#374151';
+            ctx.lineWidth = isSelected ? 4 : 2;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(to.x, to.y);
+            ctx.stroke();
+            
+            // Draw arrowhead
+            drawArrowhead(from, to, isSelected);
+            
+            // Draw label if present
+            if (label) {
+                drawArrowLabel(from, to, label);
+            }
+        }
+
+        function getBlockEdgePoint(block, targetPoint) {
+            const centerX = block.x + block.width / 2;
+            const centerY = block.y + block.height / 2;
+            
+            const dx = targetPoint.x - centerX;
+            const dy = targetPoint.y - centerY;
+            
+            // Calculate intersection with block edges
+            const halfWidth = block.width / 2;
+            const halfHeight = block.height / 2;
+            
+            if (Math.abs(dx) * halfHeight > Math.abs(dy) * halfWidth) {
+                // Intersects left or right edge
+                const x = dx > 0 ? block.x + block.width : block.x;
+                const y = centerY + (dy * halfWidth) / Math.abs(dx);
+                return { x, y };
+            } else {
+                // Intersects top or bottom edge
+                const x = centerX + (dx * halfHeight) / Math.abs(dy);
+                const y = dy > 0 ? block.y + block.height : block.y;
+                return { x, y };
+            }
+        }
+
+        function drawArrowhead(from, to, isSelected) {
+            const headlen = 12; // Arrow head length
+            const angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+            ctx.fillStyle = isSelected ? '#2563eb' : '#374151';
+            ctx.beginPath();
+            ctx.moveTo(to.x, to.y);
+            ctx.lineTo(to.x - headlen * Math.cos(angle - Math.PI / 6), to.y - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(to.x - headlen * Math.cos(angle + Math.PI / 6), to.y - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawArrowLabel(from, to, label) {
+            const midX = (from.x + to.x) / 2;
+            const midY = (from.y + to.y) / 2;
+            
+            ctx.fillStyle = '#374151';
+            ctx.font = '12px Inter';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Draw label background
+            const metrics = ctx.measureText(label);
+            const padding = 4;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(midX - metrics.width/2 - padding, midY - 6 - padding, metrics.width + 2*padding, 12 + 2*padding);
+            
+            ctx.fillStyle = '#374151';
+            ctx.fillText(label, midX, midY);
         }
 
     function hexToRgba(hex, alpha) {
@@ -532,6 +696,7 @@
     
     // --- Color HUD logic ---
     const colorHud = document.getElementById('color-hud');
+    let editingConnection = null; // connection object being edited (for label editing)
     function buildHud() {
         if (!colorHud) return;
         colorHud.innerHTML = '';
@@ -607,9 +772,118 @@
         // Ensure canvas covers all blocks before drawing so nothing is clipped
         ensureCanvasFitsBlocks();
         ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        // Draw ghosted space indicators (visualize where `space` / `space:N` tokens will be emitted)
+        drawGhostSpaces();
         drawBlocks(); 
         saveCanvasState(); 
         updateColorHud();
+    }
+
+    // Draw subtle 'ghost' rectangles on the canvas to show where the generator
+    // will emit `space` tokens between top-level blocks. This mirrors the logic
+    // in generateMermaidBlockDiagram() but only for visualization (non-persistent).
+    function drawGhostSpaces() {
+        if (!showGhostSpaces) return;
+        if (!Array.isArray(blocks) || blocks.length === 0) return;
+        // Top-level blocks only (spaces are applied between top-level columns)
+        const topLevel = blocks.filter(b => !b.parentId);
+        if (topLevel.length === 0) return;
+
+    // Compute an inferred grid unit similar to the generator (use median block width to be robust to outliers)
+    const pixelWidths = blocks.map(b => b.width || 0).filter(w => w > 0);
+    const unit = pixelWidths.length > 0 ? (function(){ const a = pixelWidths.slice().sort((x,y)=>x-y); const m = Math.floor(a.length/2); return (a.length % 2 === 1) ? a[m] : Math.round((a[m-1] + a[m]) / 2); })() : 100;
+        const gridUnit = unit > 0 ? unit : 100;
+
+        // Group top-level blocks into rows (same tolerance used by the generator)
+        const rowTolerance = 40; // px
+        const rows = [];
+        for (const b of topLevel) {
+            let placed = false;
+            for (const r of rows) {
+                if (Math.abs(r.y - b.y) <= rowTolerance) { r.blocks.push(b); placed = true; break; }
+            }
+            if (!placed) rows.push({ y: b.y, blocks: [b] });
+        }
+
+        // Overall left-most x used for gap calculations (pixel coordinate)
+        const globalMinX = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
+        const columnPixelWidth = unit > 0 ? unit : 100;
+
+        // Determine columns locally (mirror generator's logic) so the ghost visuals
+        // don't rely on a non-existent global `columns` variable which would throw.
+        const spanForLocal = (block) => {
+            if (block.blockWidth && Number.isFinite(block.blockWidth)) return Math.max(1, block.blockWidth);
+            if (block.width && unit > 0) return Math.max(1, Math.round(block.width / unit));
+            return 1;
+        };
+
+        let columnsLocal = null;
+        if (topLevel.length > 0 && typeof topLevel[0]._diagramColumns === 'number') {
+            columnsLocal = Math.max(...topLevel.map(b => b._diagramColumns || 0));
+        }
+        if (!columnsLocal || columnsLocal <= 0) {
+            const rowToleranceForColumns = rowTolerance;
+            const rowsForColumns = [];
+            for (const b of topLevel) {
+                let placed = false;
+                for (const r of rowsForColumns) {
+                    if (Math.abs(r.y - b.y) <= rowToleranceForColumns) { r.blocks.push(b); placed = true; break; }
+                }
+                if (!placed) rowsForColumns.push({ y: b.y, blocks: [b] });
+            }
+            let maxRowSpan = 1;
+            for (const r of rowsForColumns) {
+                let rowSum = 0;
+                for (const b of r.blocks) rowSum += spanForLocal(b);
+                maxRowSpan = Math.max(maxRowSpan, rowSum);
+            }
+            columnsLocal = Math.max(1, Math.round(maxRowSpan));
+        }
+
+        // Visual style for ghost boxes
+        ctx.save();
+        ctx.fillStyle = 'rgba(100,100,100,0.06)';
+        ctx.strokeStyle = 'rgba(100,100,100,0.14)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 6]);
+
+        for (const r of rows) {
+            const blocksInRow = r.blocks.slice().sort((a, b) => a.x - b.x);
+            const rowHasParents = blocksInRow.some(b => blocks.some(x => x.parentId === b.id));
+            if (rowHasParents) continue;
+
+            // Height for the ghost area: use tallest block in the row or a sensible default
+            const rowHeight = Math.max(...blocksInRow.map(b => b.height || (gridSize * 3)), gridSize * 3);
+            const rowY = r.y;
+
+            let currentColIndex = 0;
+            for (const b of blocksInRow) {
+                    // Map block x -> column index using floor-based mapping with a small bias
+                    // This makes small pixel offsets less likely to flip the column and stabilizes space detection.
+                    // Map block x -> column index using a robust rounding strategy to avoid
+                    // off-by-one errors when blocks are near column boundaries.
+                    // Map block x -> column index using rounding and clamp to last column so
+                    // blocks slightly beyond the right edge are still emitted in the last column.
+                    let approxCol = Math.max(0, Math.round((b.x - globalMinX) / columnPixelWidth));
+                    if (typeof columns === 'number' && columns > 0) approxCol = Math.min(columns - 1, approxCol);
+                let gapCols = Math.max(0, approxCol - currentColIndex);
+                if (currentColIndex + gapCols > columnsLocal) gapCols = Math.max(0, columnsLocal - currentColIndex);
+                if (gapCols > 0) {
+                    const ghostWidth = gapCols * columnPixelWidth;
+                    const ghostX = globalMinX + currentColIndex * columnPixelWidth;
+                    ctx.fillRect(ghostX, rowY, ghostWidth, rowHeight);
+                    ctx.strokeRect(ghostX + 0.5, rowY + 0.5, ghostWidth - 1, rowHeight - 1);
+                    currentColIndex += gapCols;
+                }
+
+                // Advance currentColIndex by the block's span (rounded/clamped)
+                const blockSpan = Math.min(Math.max(1, Math.round((b.width || columnPixelWidth) / columnPixelWidth)), Math.max(1, columnsLocal - currentColIndex));
+                currentColIndex += blockSpan;
+                if (currentColIndex >= columnsLocal) break;
+            }
+        }
+
+        ctx.restore();
     }
         
         // --- EVENT HANDLERS & LOGIC ---
@@ -644,6 +918,43 @@
             const pos = getMousePos(e);
             dragStartStates.clear();
             let topBlock = getTopBlockAtPos(pos);
+            // Check for connection hit (right-click or selection) before block interactions
+            const hitConnection = hitTestConnection(pos);
+            if (hitConnection) {
+                // If right-click, show context menu for connection
+                if (e.button === 2) { e.preventDefault(); activeContextMenuConnection = hitConnection; activeContextMenuBlock = null; showContextMenu(e.clientX, e.clientY); return; }
+                // Otherwise, select/deselect the connection
+                selectedConnections.clear(); selectedBlocks.clear(); selectedConnections.add(hitConnection._id);
+                draw(); return;
+            } else {
+                activeContextMenuConnection = null;
+            }
+            
+            // Handle arrow mode
+            if (arrowMode && topBlock) {
+                if (!arrowStart) {
+                    // First click - select start block
+                    arrowStart = topBlock;
+                    selectedBlocks.clear();
+                    selectedBlocks.add(topBlock);
+                } else if (arrowStart && topBlock !== arrowStart) {
+                    // Second click - create connection
+                    const newConnection = { _id: `conn${connectionCounter++}`, from: arrowStart.id, to: topBlock.id, label: '', arrowType: '-->' };
+                    connections.push(newConnection);
+                    arrowStart = null;
+                    selectedBlocks.clear();
+                    draw();
+                    updateMarkdown();
+                    return;
+                } else {
+                    // Clicked same block - cancel
+                    arrowStart = null;
+                    selectedBlocks.clear();
+                }
+                draw();
+                return;
+            }
+            
             if (topBlock) {
                 resizeHandle = isOverResizeHandle(pos, topBlock);
                 if (e.button === 2) { e.preventDefault(); activeContextMenuBlock = topBlock; showContextMenu(e.clientX, e.clientY); return; }
@@ -659,14 +970,47 @@
                 }
             } else {
                 if (!e.ctrlKey && !e.shiftKey) selectedBlocks.clear();
-                if (e.button !== 2) {
+                if (e.button !== 2 && !arrowMode) {
                     drawing = true; startX = snapToGrid(pos.x); startY = snapToGrid(pos.y);
                     currentBlock = { id: generateFriendlyId(), parentId: null, x: startX, y: startY, width: 0, height: 0, text: 'New Block' };
                     blocks.push(currentBlock);
                 }
             }
-            hideContextMenu(); draw();
+            hideContextMenu();
+            // Ensure connection tooltip is hidden when context menu is opened
+            const tooltip = document.getElementById('conn-tooltip'); if (tooltip) tooltip.classList.add('hidden');
+            draw();
         });
+
+        // Hit-test for connections: returns connection object if click is near a connection line
+        function hitTestConnection(pos) {
+            // tolerance in pixels from the line
+            const tol = 6;
+            const blockMap = new Map(blocks.map(b => [b.id, b]));
+            for (let i = connections.length - 1; i >= 0; i--) {
+                const conn = connections[i];
+                const from = blockMap.get(conn.from);
+                const to = blockMap.get(conn.to);
+                if (!from || !to) continue;
+                const p1 = getBlockEdgePoint(from, { x: to.x + to.width / 2, y: to.y + to.height / 2 });
+                const p2 = getBlockEdgePoint(to, { x: from.x + from.width / 2, y: from.y + from.height / 2 });
+                if (pointNearSegment(pos, p1, p2, tol)) return conn;
+            }
+            return null;
+        }
+
+        function pointNearSegment(p, a, b, tol) {
+            // Return true if point p is within tol pixels of segment ab
+            const vx = b.x - a.x, vy = b.y - a.y;
+            const wx = p.x - a.x, wy = p.y - a.y;
+            const c1 = vx * wx + vy * wy;
+            if (c1 <= 0) return Math.hypot(p.x - a.x, p.y - a.y) <= tol;
+            const c2 = vx * vx + vy * vy;
+            if (c2 <= c1) return Math.hypot(p.x - b.x, p.y - b.y) <= tol;
+            const t = c1 / c2;
+            const projX = a.x + t * vx, projY = a.y + t * vy;
+            return Math.hypot(p.x - projX, p.y - projY) <= tol;
+        }
 
         canvas.addEventListener('mousemove', (e) => {
             const pos = getMousePos(e);
@@ -683,6 +1027,29 @@
                     } else cursor = 'move';
                 }
                 canvas.style.cursor = cursor;
+            }
+
+            // Tooltip handling: show connection label on hover
+            const tooltip = document.getElementById('conn-tooltip');
+            const hoverConn = hitTestConnection(pos);
+            // Suppress tooltip if the context menu is open for a connection, if we're actively editing a connection,
+            // or if the shared text editor (block/conn editor) currently has focus
+            const contextOpenForConnection = contextMenu.classList.contains('show') && !!activeContextMenuConnection;
+            const editorHasFocus = document.activeElement === textEditor;
+            const suppressTooltip = contextOpenForConnection || !!editingConnection || editorHasFocus;
+            if (hoverConn && !suppressTooltip) {
+                if (tooltip) {
+                    tooltip.innerText = hoverConn.label || '(no label)';
+                    tooltip.classList.remove('hidden');
+                    // Position tooltip near mouse but keep inside container
+                    const containerRect = canvasContainer.getBoundingClientRect();
+                    const left = Math.min(Math.max(8, e.clientX - containerRect.left + 12), containerRect.width - 120);
+                    const top = Math.min(Math.max(8, e.clientY - containerRect.top + 12), containerRect.height - 32);
+                    tooltip.style.left = left + 'px';
+                    tooltip.style.top = top + 'px';
+                }
+            } else {
+                if (tooltip) tooltip.classList.add('hidden');
             }
 
             if (drawing) {
@@ -732,40 +1099,207 @@
             updateMarkdown(); draw();
         });
         
-        canvas.addEventListener('dblclick', e => { const b = getTopBlockAtPos(getMousePos(e)); if(b) showTextEditor(b); });
+        canvas.addEventListener('dblclick', e => {
+            const pos = getMousePos(e);
+            // If double-clicked near a connection, open the connection label editor
+            const hitConn = hitTestConnection(pos);
+            if (hitConn) {
+                showConnectionLabelEditor(hitConn);
+                return;
+            }
+            const b = getTopBlockAtPos(pos);
+            if (b) showTextEditor(b);
+        });
+
+        // Show a lightweight label editor for a connection (reuses the existing textEditor element)
+        function showConnectionLabelEditor(conn) {
+            editingConnection = conn;
+            editingBlock = null; // ensure block editor is not active
+            // Hide any visible connection tooltip when entering edit mode
+            const tooltip = document.getElementById('conn-tooltip'); if (tooltip) tooltip.classList.add('hidden');
+            // position the editor at the midpoint of the connection
+            const fromBlock = getBlockById(conn.from);
+            const toBlock = getBlockById(conn.to);
+            if (!fromBlock || !toBlock) return;
+            const fromPt = getBlockEdgePoint(fromBlock, { x: toBlock.x + toBlock.width / 2, y: toBlock.y + toBlock.height / 2 });
+            const toPt = getBlockEdgePoint(toBlock, { x: fromBlock.x + fromBlock.width / 2, y: fromBlock.y + fromBlock.height / 2 });
+            const midX = Math.round((fromPt.x + toPt.x) / 2);
+            const midY = Math.round((fromPt.y + toPt.y) / 2);
+
+            // Show and position the shared textEditor
+            textEditor.style.display = 'block';
+            textEditor.style.left = (midX - 80) + 'px';
+            textEditor.style.top = (midY - 12) + 'px';
+            textEditor.style.width = '160px';
+            textEditor.style.height = '28px';
+            textEditor.value = conn.label || '';
+            textEditor.focus();
+            textEditor.select();
+
+            // Highlight the connection while editing
+            selectedConnections.clear(); selectedBlocks.clear(); if (conn._id) selectedConnections.add(conn._id);
+            draw();
+        }
         
         function showTextEditor(block) {
             editingBlock = block;
             Object.assign(textEditor.style, { display: 'block', left: `${block.x}px`, top: `${block.y}px`, width: `${block.width}px`, height: `${block.height}px` });
             textEditor.value = block.text.replace(/\\n/g, '\n'); textEditor.focus(); textEditor.select();
+            // Ensure the connection tooltip is hidden while the text editor is focused for editing blocks
+            const tooltip = document.getElementById('conn-tooltip'); if (tooltip) tooltip.classList.add('hidden');
         }
         function hideTextEditor() {
+            if (editingConnection) {
+                // Save connection label
+                editingConnection.label = textEditor.value || '';
+                editingConnection = null;
+                textEditor.style.display = 'none';
+                selectedConnections.clear();
+                draw(); updateMarkdown();
+                return;
+            }
             if (!editingBlock) return;
             editingBlock.text = textEditor.value.replace(/\n/g, '\\n');
             editingBlock = null; textEditor.style.display = 'none'; draw(); updateMarkdown();
         }
         textEditor.addEventListener('blur', hideTextEditor);
-        textEditor.addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) {e.preventDefault();hideTextEditor();} if(e.key==='Escape'){editingBlock=null;textEditor.style.display='none';draw();}});
+        textEditor.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); hideTextEditor(); }
+            if (e.key === 'Escape') { editingBlock = null; editingConnection = null; textEditor.style.display = 'none'; draw(); }
+        });
         
         // --- CONTEXT MENU & ACTIONS ---
         function showContextMenu(x, y) {
             Object.assign(contextMenu.style, {left:`${x}px`, top:`${y}px`}); contextMenu.classList.add('show');
             const canMerge = selectedBlocks.size > 1; mergeBtn.disabled=!canMerge; Object.assign(mergeBtn.style, {cursor:canMerge?'pointer':'not-allowed',opacity:canMerge?1:0.5});
+            // Show delete-connection button only when a connection was right-clicked
+            const deleteConnBtn = document.getElementById('delete-connection');
+            const editConnBtn = document.getElementById('edit-connection-label');
+            const splitHBtn = document.getElementById('split-h');
+            const splitVBtn = document.getElementById('split-v');
+            const mergeBtnEl = document.getElementById('merge');
+            const deleteBtnEl = document.getElementById('delete');
+            // Only show connection actions when the context menu was opened on a connection (not on a block)
+            const showConnActions = !!activeContextMenuConnection && !activeContextMenuBlock;
+            // When showing connection actions, hide block-specific actions; otherwise show block actions
+            if (deleteConnBtn) {
+                if (showConnActions) deleteConnBtn.classList.remove('hidden-item'); else deleteConnBtn.classList.add('hidden-item');
+            }
+            if (editConnBtn) {
+                if (showConnActions) editConnBtn.classList.remove('hidden-item'); else editConnBtn.classList.add('hidden-item');
+            }
+
+            // Show/hide arrow type buttons for connections
+            const arrowLineBtn = document.getElementById('arrow-line');
+            const arrowForwardBtn = document.getElementById('arrow-forward');
+            const arrowBackwardBtn = document.getElementById('arrow-backward');
+            const arrowBtns = [arrowLineBtn, arrowForwardBtn, arrowBackwardBtn];
+            for (const btn of arrowBtns) {
+                if (!btn) continue;
+                if (showConnActions) btn.classList.remove('hidden-item'); else btn.classList.add('hidden-item');
+            }
+
+            const blockActions = [splitHBtn, splitVBtn, mergeBtnEl, deleteBtnEl];
+            for (const el of blockActions) {
+                if (!el) continue;
+                if (showConnActions) el.style.display = 'none'; else el.style.display = '';
+            }
         }
-        function hideContextMenu() { contextMenu.classList.remove('show'); activeContextMenuBlock = null; }
-        window.addEventListener('click', e => { if (!contextMenu.contains(e.target)) hideContextMenu(); });
+    function hideContextMenu() { contextMenu.classList.remove('show'); activeContextMenuBlock = null; activeContextMenuConnection = null; }
+    window.addEventListener('click', e => { if (!contextMenu.contains(e.target)) hideContextMenu(); });
         canvas.addEventListener('contextmenu', e => e.preventDefault());
 
         const createAndAddBlock = (props) => { blocks.push({ id: generateFriendlyId(), parentId: activeContextMenuBlock.parentId, text: 'New Block', ...props }); hideContextMenu(); draw(); updateMarkdown(); };
         splitHBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const h = snapToGrid(activeContextMenuBlock.height/2); createAndAddBlock({ ...activeContextMenuBlock, y: activeContextMenuBlock.y+h, height:activeContextMenuBlock.height-h}); activeContextMenuBlock.height = h; });
         splitVBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const w = snapToGrid(activeContextMenuBlock.width/2); createAndAddBlock({ ...activeContextMenuBlock, x: activeContextMenuBlock.x+w, width:activeContextMenuBlock.width-w}); activeContextMenuBlock.width = w; });
         deleteBtn.addEventListener('click', () => { const toDelete = new Set(selectedBlocks.size > 0 ? [...selectedBlocks] : (activeContextMenuBlock ? [activeContextMenuBlock] : [])); if (toDelete.size > 0) deleteBlocks(toDelete); hideContextMenu(); draw(); updateMarkdown(); });
+        const deleteConnBtn = document.getElementById('delete-connection');
+        if (deleteConnBtn) {
+            deleteConnBtn.addEventListener('click', () => {
+                if (activeContextMenuConnection) {
+                    connections = connections.filter(c => c._id !== activeContextMenuConnection._id);
+                    activeContextMenuConnection = null;
+                } else if (selectedConnections.size > 0) {
+                    connections = connections.filter(c => !selectedConnections.has(c._id));
+                    selectedConnections.clear();
+                }
+                hideContextMenu(); draw(); updateMarkdown();
+            });
+        }
+        const editConnBtn = document.getElementById('edit-connection-label');
+        if (editConnBtn) {
+            editConnBtn.addEventListener('click', () => {
+                const targetConn = activeContextMenuConnection || (connections.find(c => selectedConnections.has(c._id)) || null);
+                if (targetConn) {
+                    showConnectionLabelEditor(targetConn);
+                }
+                hideContextMenu();
+            });
+        }
+        
+        // Arrow type buttons
+        const arrowLineBtn = document.getElementById('arrow-line');
+        const arrowForwardBtn = document.getElementById('arrow-forward');
+        const arrowBackwardBtn = document.getElementById('arrow-backward');
+        
+        if (arrowLineBtn) {
+            arrowLineBtn.addEventListener('click', () => {
+                const targetConn = activeContextMenuConnection || (connections.find(c => selectedConnections.has(c._id)) || null);
+                if (targetConn) {
+                    targetConn.arrowType = '---';
+                    draw(); updateMarkdown();
+                }
+                hideContextMenu();
+            });
+        }
+        
+        if (arrowForwardBtn) {
+            arrowForwardBtn.addEventListener('click', () => {
+                const targetConn = activeContextMenuConnection || (connections.find(c => selectedConnections.has(c._id)) || null);
+                if (targetConn) {
+                    targetConn.arrowType = '-->';
+                    draw(); updateMarkdown();
+                }
+                hideContextMenu();
+            });
+        }
+        
+        if (arrowBackwardBtn) {
+            arrowBackwardBtn.addEventListener('click', () => {
+                const targetConn = activeContextMenuConnection || (connections.find(c => selectedConnections.has(c._id)) || null);
+                if (targetConn) {
+                    // For backwards arrow, swap from/to and use forward arrow type
+                    const tempFrom = targetConn.from;
+                    targetConn.from = targetConn.to;
+                    targetConn.to = tempFrom;
+                    targetConn.arrowType = '-->';
+                    draw(); updateMarkdown();
+                }
+                hideContextMenu();
+            });
+        }
         mergeBtn.addEventListener('click', () => { if(selectedBlocks.size<=1) return; const arr=[...selectedBlocks], b = arr.reduce((a,c)=>({minX:Math.min(a.minX,c.x),minY:Math.min(a.minY,c.y),maxX:Math.max(a.maxX,c.x+c.width),maxY:Math.max(a.maxY,c.y+c.height)}),{minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity}); const txt = arr.map(c=>c.text).filter(t=>t&&t.trim()!=='New Block').join(' / '); blocks=blocks.filter(c=>!selectedBlocks.has(c)); const newBlock={id:generateFriendlyId(),parentId:arr[0].parentId,x:b.minX,y:b.minY,width:b.maxX-b.minX,height:b.maxY-b.minY,text:txt||'Merged'}; blocks.push(newBlock); selectedBlocks.clear(); selectedBlocks.add(newBlock); hideContextMenu(); draw(); updateMarkdown(); });
         
         // --- HEADER BUTTONS & MERMAID GENERATION ---
         copyMarkdownBtn.addEventListener('click', () => { markdownOutput.select(); document.execCommand('copy'); const t=copyMarkdownBtn.innerText; copyMarkdownBtn.innerText='Copied!'; setTimeout(()=>copyMarkdownBtn.innerText=t,2000);});
-        clearCanvasBtn.addEventListener('click', () => { blocks=[]; selectedBlocks.clear(); diagramTitleInput.value=''; draw(); updateMarkdown(); });
+        clearCanvasBtn.addEventListener('click', () => { blocks=[]; connections=[]; selectedBlocks.clear(); diagramTitleInput.value=''; draw(); updateMarkdown(); });
     fitDiagramBtn.addEventListener('click', () => { scrollCanvasToFitBlocks(); });
+        arrowModeBtn.addEventListener('click', () => { 
+            arrowMode = !arrowMode; 
+            arrowModeBtn.textContent = arrowMode ? '🔗 Exit Arrow Mode' : '🔗 Arrow Mode';
+            arrowModeBtn.className = arrowMode ? 'btn primary' : 'btn secondary';
+            arrowStart = null;
+            canvas.style.cursor = arrowMode ? 'crosshair' : 'default';
+        });
+        const toggleGhostBtn = document.getElementById('toggle-ghost-spaces');
+        if (toggleGhostBtn) {
+            toggleGhostBtn.addEventListener('click', () => {
+                showGhostSpaces = !showGhostSpaces;
+                toggleGhostBtn.textContent = `Ghost spaces: ${showGhostSpaces ? 'On' : 'Off'}`;
+                toggleGhostBtn.className = showGhostSpaces ? 'btn primary' : 'btn ghost';
+                draw();
+            });
+        }
         diagramTitleInput.addEventListener('input', updateMarkdown);
 
     // --- Persistence: save/load canvas state to localStorage ---
@@ -776,16 +1310,22 @@
                 if (!autosaveEnabled) return; // skip saving during initialization
                 // Don't overwrite an existing saved diagram with an empty canvas/title
                 if ((!blocks || blocks.length === 0) && !diagramTitleInput.value.trim()) return;
-                // Create a JSON-safe snapshot of blocks (avoid storing object references in connections)
+                // Create a JSON-safe snapshot of blocks and connections
                 const blocksSnapshot = blocks.map(b => {
                     const { id, x, y, width, height, text, parentId, blockWidth, originalId, color } = b;
-                    const connections = (b.connections || []).map(c => ({ targetId: (c.target && c.target.id) || c.targetId || null, label: c.label || '' }));
-                    return { id, x, y, width, height, text, parentId, blockWidth, originalId, color, connections };
+                    return { id, x, y, width, height, text, parentId, blockWidth, originalId, color };
                 });
-                const payload = { title: diagramTitleInput.value || '', blocks: blocksSnapshot };
+                const connectionsSnapshot = (connections || []).map(c => ({
+                    _id: c._id || null,
+                    from: c.from,
+                    to: c.to,
+                    label: c.label || '',
+                    arrowType: c.arrowType || '-->'
+                }));
+                const payload = { title: diagramTitleInput.value || '', blocks: blocksSnapshot, connections: connectionsSnapshot };
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
                 // Log success for debugging in browser console
-                console.log('Saved canvas state to localStorage (items:', blocksSnapshot.length, ')');
+                console.log('Saved canvas state to localStorage (blocks:', blocksSnapshot.length, 'connections:', connectionsSnapshot.length, ')');
             } catch (e) { console.warn('Failed to save canvas state', e); }
         }
 
@@ -813,34 +1353,17 @@
                         };
                     });
 
-                    // Restore connections by resolving targetId to object references
-                    const byId = new Map(reconstructed.map(b => [b.id, b]));
-                    parsed.blocks.forEach((bSnapshot) => {
-                        if (Array.isArray(bSnapshot.connections) && bSnapshot.connections.length > 0) {
-                            const source = byId.get(bSnapshot.id);
-                            if (!source) return;
-                            source.connections = [];
-                            for (const c of bSnapshot.connections) {
-                                const target = byId.get(c.targetId) || null;
-                                source.connections.push({ target: target, label: c.label || '' });
-                            }
-                        }
-                    });
-
-                    // Restore color property if present
-                    parsed.blocks.forEach(bSnapshot => {
-                        const target = byId.get(bSnapshot.id);
-                        if (target && bSnapshot.color) target.color = bSnapshot.color;
-                    });
-
                     blocks = reconstructed;
+                    // Restore connections and ensure each has a unique _id
+                    const loadedConnections = (parsed.connections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, from: c.from, to: c.to, label: c.label || '', arrowType: c.arrowType || '-->' }));
+                    connections = loadedConnections;
                     diagramTitleInput.value = parsed.title || '';
                     selectedBlocks.clear();
                     draw();
                     updateMarkdown();
                     // Scroll container to show the loaded diagram
                     scrollCanvasToFitBlocks();
-                    console.log('Loaded canvas state from localStorage (items:', blocks.length, ')');
+                    console.log('Loaded canvas state from localStorage (blocks:', blocks.length, 'connections:', connections.length, ')');
                     return true;
                 }
             } catch (e) { console.warn('Failed to load canvas state', e); }
@@ -885,12 +1408,44 @@
             blocks = blocks.filter(b => !allToDelete.has(b.id));
             selectedBlocks = new Set([...selectedBlocks].filter(b => !allToDelete.has(b.id)));
         }
-        window.addEventListener('keydown', (e) => { if ((e.key==='Delete'||e.key==='Backspace') && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName) && selectedBlocks.size>0) { e.preventDefault(); deleteBlocks(selectedBlocks); draw(); updateMarkdown(); }});
+        window.addEventListener('keydown', (e) => {
+            if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+            // Toggle Arrow Mode with 'A' or 'a'
+            if (e.key === 'A' || e.key === 'a') {
+                e.preventDefault();
+                arrowMode = !arrowMode;
+                arrowModeBtn.textContent = arrowMode ? '🔗 Exit Arrow Mode' : '🔗 Arrow Mode';
+                arrowModeBtn.className = arrowMode ? 'btn primary' : 'btn secondary';
+                arrowStart = null;
+                canvas.style.cursor = arrowMode ? 'crosshair' : 'default';
+                selectedConnections.clear(); selectedBlocks.clear(); draw();
+                return;
+            }
+
+            // Delete selected connections first, otherwise delete selected blocks
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedConnections.size > 0) {
+                e.preventDefault();
+                // Remove connections whose _id is in selectedConnections
+                connections = connections.filter(c => !selectedConnections.has(c._id));
+                selectedConnections.clear();
+                draw(); updateMarkdown();
+                return;
+            }
+
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedConnections.size === 0 && selectedBlocks.size > 0) {
+                e.preventDefault(); deleteBlocks(selectedBlocks); draw(); updateMarkdown();
+            }
+        });
         
         // AI features removed
 
         // --- LOAD MODAL LOGIC ---
-        loadMarkdownBtn.addEventListener('click', () => { loadInput.value = ''; loadError.classList.add('hidden'); loadModal.classList.remove('hidden'); });
+        loadMarkdownBtn.addEventListener('click', () => {
+            loadInput.value = '';
+            loadError.classList.add('hidden');
+            loadModal.classList.remove('hidden');
+            setTimeout(() => loadInput.focus(), 0); // Focus textarea after modal is visible
+        });
         closeLoadModalBtn.addEventListener('click', () => loadModal.classList.add('hidden'));
 
         function parseHtmlToBlocks(htmlString) {
@@ -979,6 +1534,11 @@
             // Grid positioning based on column count
             let currentRow = 0;
             let currentCol = 0;
+            // When a 'space' token is parsed we set this flag so the next block
+            // placement can skip the usual wrap behavior. This lets explicit
+            // 'space' tokens push blocks to the right on the same row, allowing
+            // the generator to later infer a larger column count.
+            let skipNextWrap = false;
             const blockWidth = 120;
             const blockHeight = 80;
             const padding = 20;
@@ -1013,9 +1573,14 @@
 
                     // Advance grid position by the width factor (span columns)
                     currentCol += blockWidthFactor;
-                    while (currentCol >= columnCount) {
-                        currentCol -= columnCount;
-                        currentRow++;
+                    if (skipNextWrap) {
+                        // Honor the skip for a single placement then clear the flag
+                        skipNextWrap = false;
+                    } else {
+                        while (currentCol >= columnCount) {
+                            currentCol -= columnCount;
+                            currentRow++;
+                        }
                     }
                 } else if (parentId) {
                     // Position child blocks inside parent with proper layout
@@ -1073,12 +1638,39 @@
                 return block;
             }
             
+            // Preprocess lines to convert new label syntax (A -- \"label\" --> B) to old syntax (A --> |\"label\"| B)
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmed = line.trim();
+                
+                // Skip classDef and class statements - these should not be preprocessed
+                if (trimmed.startsWith('classDef ') || trimmed.startsWith('class ')) {
+                    continue;
+                }
+                
+                // Convert new label format to old format that existing parser understands
+                const newLabelMatch = trimmed.match(/^([A-Za-z0-9_-]+)\s+--\s+"([^"]+)"\s+(-->|---|<--)\s+([A-Za-z0-9_-]+)$/);
+                if (newLabelMatch) {
+                    const [, fromId, label, arrowType, toId] = newLabelMatch;
+                    const converted = `  ${fromId} ${arrowType} |"${label}"| ${toId}`;
+                    lines[i] = converted;
+                }
+            }
+            
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
                 const trimmed = line.trim();
                 const indent = line.length - line.trimStart().length;
-                
+                // Reset column cursor at the start of each logical line so leading `space` tokens
+                // apply to the current row rather than accumulating from previous rows.
+                currentCol = 0;
+
                 if (!trimmed) continue;
+                
+                // Skip classDef and class statements - these will be handled in post-processing
+                if (trimmed.startsWith('classDef ') || trimmed.startsWith('class ')) {
+                    continue;
+                }
                 
                 // Handle end keyword - pop from parent stack
                 if (trimmed === 'end') {
@@ -1107,13 +1699,28 @@
                     continue;
                 }
                 
-                // If this line is a connection (e.g. "A --> B" or "A --> |"label"|B"), parse it
+                // If this line is a connection (e.g. "A --> B", "A --- B", "A <-- B"), parse it
                 // Use a small string-based parser instead of a complex regex literal to avoid
                 // editor/HTML linter issues with escape sequences inside the <script>.
-                const arrowIndex = trimmed.indexOf('-->');
+                let arrowIndex = -1;
+                let arrowType = '';
+                let arrowLength = 0;
+                
+                // Check for different arrow types
+                if ((arrowIndex = trimmed.indexOf('-->')) !== -1) {
+                    arrowType = '-->';
+                    arrowLength = 3;
+                } else if ((arrowIndex = trimmed.indexOf('<--')) !== -1) {
+                    arrowType = '<--';
+                    arrowLength = 3;
+                } else if ((arrowIndex = trimmed.indexOf('---')) !== -1) {
+                    arrowType = '---';
+                    arrowLength = 3;
+                }
+                
                 if (arrowIndex !== -1) {
                     const left = trimmed.slice(0, arrowIndex).trim();
-                    let right = trimmed.slice(arrowIndex + 3).trim();
+                    let right = trimmed.slice(arrowIndex + arrowLength).trim();
                     let fromId = left;
                     let toId = '';
                     let label = '';
@@ -1133,13 +1740,19 @@
                         toId = right.split(/\s+/)[0];
                     }
 
+                    // Handle backwards arrow by swapping from/to
+                    if (arrowType === '<--') {
+                        [fromId, toId] = [toId, fromId];
+                        arrowType = '-->';
+                    }
+
                     // Validate simple id shapes before accepting (allow hyphens for UUIDs)
                     if (/^[\w-]+$/.test(fromId) && /^[\w-]+$/.test(toId)) {
                         const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
                         // Ensure both blocks exist - don't advance grid for connection-implied blocks
                         createBlock(fromId, fromId, currentParent, false);
                         createBlock(toId, toId, currentParent, false);
-                        connections.push({ from: fromId, to: toId, label: label || '' });
+                        connections.push({ from: fromId, to: toId, label: label || '', arrowType: arrowType });
                         continue;
                     }
                     // fallthrough to token parsing if it wasn't a valid connection line
@@ -1167,11 +1780,12 @@
                     if (/^space/.test(token)) {
                         const sm = token.match(/^space(?::(\d+))?$/);
                         const spaceWidth = sm && sm[1] ? parseInt(sm[1]) : 1;
+                        // Advance the column cursor and mark that the next block
+                        // placement should skip the normal wrapping behavior so the
+                        // explicit space can push placement to the right on the
+                        // current row rather than immediately wrapping.
                         currentCol += spaceWidth;
-                        while (currentCol >= columnCount) {
-                            currentCol -= columnCount;
-                            currentRow++;
-                        }
+                        skipNextWrap = true;
                         continue;
                     }
 
@@ -1185,29 +1799,50 @@
                         if (color) blk.color = color;
                     }
                 }
+
+                // After processing tokens on this input line, advance to the next row so
+                // subsequent logical lines are placed on the next canvas row.
+                // (Lines that used 'continue' earlier — e.g. connections, block:ID, end —
+                // will have skipped token processing and won't reach this increment.)
+                currentRow++;
             }
             
             // Convert Map to Array for the blocks
             const newBlocks = Array.from(blockMap.values());
 
+            // Parse classDef and class statements for color information
+            const classDefs = new Map();
+            for (let i = 0; i < lines.length; i++) {
+                const trimmed = lines[i].trim();
+                
+                // Parse classDef statements: classDef className fill:#color,stroke:#333,stroke-width:2px;
+                const classDefMatch = trimmed.match(/^classDef\s+([\w]+)\s+fill:(#[0-9A-Fa-f]{6})[,;]/);
+                if (classDefMatch) {
+                    const [, className, fillColor] = classDefMatch;
+                    classDefs.set(className, fillColor);
+                    continue;
+                }
+                
+                // Parse class statements: class blockId className
+                const classMatch = trimmed.match(/^class\s+([\w-]+)\s+([\w]+)$/);
+                if (classMatch) {
+                    const [, blockId, className] = classMatch;
+                    const color = classDefs.get(className);
+                    if (color) {
+                        const block = newBlocks.find(b => b.id === blockId);
+                        if (block) {
+                            block.color = color;
+                        }
+                    }
+                    continue;
+                }
+            }
+
             // Attach original diagram column count to parsed blocks so a generator
             // can prefer the original `columns N` directive during round-trip.
             newBlocks.forEach(b => { b._diagramColumns = columnCount; });
             
-            // Add connections to blocks
-            connections.forEach(conn => {
-                const fromBlock = newBlocks.find(b => b.id === conn.from);
-                const toBlock = newBlocks.find(b => b.id === conn.to);
-                if (fromBlock && toBlock) {
-                    if (!fromBlock.connections) fromBlock.connections = [];
-                    fromBlock.connections.push({
-                        target: toBlock,
-                        label: conn.label
-                    });
-                }
-            });
-            
-            return { title, blocks: newBlocks };
+            return { title, blocks: newBlocks, connections };
         }
 
         // --- Mermaid Generator ---
@@ -1339,8 +1974,9 @@
             const byId = new Map(allBlocks.map(b => [b.id, b]));
 
             // Infer unit pixel width for span inference when block.blockWidth is not set
+            // Use median block width so a single very wide or very narrow block doesn't skew the column inference
             const pixelWidths = allBlocks.map(b => b.width || 0).filter(w => w > 0);
-            const unit = pixelWidths.length > 0 ? Math.min(...pixelWidths) : 100;
+            const unit = pixelWidths.length > 0 ? (function(){ const a = pixelWidths.slice().sort((x,y)=>x-y); const m = Math.floor(a.length/2); return (a.length % 2 === 1) ? a[m] : Math.round((a[m-1] + a[m]) / 2); })() : 100;
 
             function spanFor(block) {
                 if (block.blockWidth && Number.isFinite(block.blockWidth)) return Math.max(1, block.blockWidth);
@@ -1357,13 +1993,12 @@
                 const children = allBlocks.filter(x => x.parentId === b.id);
                 const lines = [];
                 if (children.length > 0) {
-                    // Start parent block (emit label and color annotation if present)
-                    const colorToken = b.color ? ` %%color:${b.color.replace('#','')}` : '';
+                    // Start parent block (colors will be handled via classDef/class statements)
                     
                     // For invisible parents, don't emit a label (empty text)
                     const label = (b.text && !b._isInvisibleParent) ? `["${escapeLabel(b.text)}"]` : '';
                     
-                    lines.push(`${indent}block:${b.id}${label}${colorToken}`);
+                    lines.push(`${indent}block:${b.id}${label}`);
                     for (const child of children) {
                         lines.push(emitBlockRecursive(child, indent + '  '));
                     }
@@ -1371,24 +2006,27 @@
                 } else {
                     const span = spanFor(b);
                     const label = b.text ? `["${escapeLabel(b.text)}"]` : '';
-                    // Append color annotation if present using a comment-style token which is easy to parse
-                    const colorToken = b.color ? ` %%color:${b.color.replace('#','')}` : '';
-                    lines.push(`${indent}${b.id}${span > 1 ? `:${span}` : ''}${label}${colorToken}`);
+                    // Colors will be handled via classDef/class statements
+                    lines.push(`${indent}${b.id}${span > 1 ? `:${span}` : ''}${label}`);
                 }
                 return lines.join('\n');
             }
 
             // Build output
-            // If parsed blocks included a `columns N` directive, prefer that value
-            // for round-trip fidelity. Otherwise infer number of columns by grouping
-            // top-level blocks into rows (y-coordinate buckets) and summing their
-            // span (blockWidth) per row. Use the maximum row sum as columns.
-            let columns = null;
+            // If parsed blocks included a `columns N` directive, treat that as a
+            // minimum baseline for round-trip fidelity. However, if user layout
+            // changes (for example by inserting explicit space or moving blocks),
+            // allow the inferred column count to increase beyond the original so
+            // the emitted diagram reflects the visible spacing. We compute both
+            // the original (if any) and the inferred value and use the max.
+            let originalColumns = null;
             if (topLevel.length > 0 && typeof topLevel[0]._diagramColumns === 'number') {
-                columns = Math.max(...topLevel.map(b => b._diagramColumns || 0));
+                originalColumns = Math.max(...topLevel.map(b => b._diagramColumns || 0));
             }
 
-            if (!columns || columns <= 0) {
+            let columns = null;
+
+            if (!originalColumns || originalColumns <= 0) {
                 const rowTolerance = 40; // px tolerance to group blocks into the same row
                 const rows = [];
                 for (const b of topLevel) {
@@ -1404,19 +2042,223 @@
                 }
 
                 let maxRowSpan = 1;
+                // DEBUG: show top-level items and how they are bucketed into rows
+                console.log('DEBUG: topLevel =>', topLevel.map(b => ({ id: b.id, x: b.x, y: b.y })));
+                console.log('DEBUG: initial rows =>', rows.map(r => ({ y: r.y, ids: r.blocks.map(b => b.id) })));
                 for (const r of rows) {
                     let rowSum = 0;
                     for (const b of r.blocks) rowSum += spanFor(b);
                     maxRowSpan = Math.max(maxRowSpan, rowSum);
                 }
 
+                console.log('DEBUG: computed maxRowSpan =', maxRowSpan);
                 columns = Math.max(1, Math.round(maxRowSpan));
+
+                // Additionally infer required columns from the actual X positions
+                // so explicit visual gaps (ghost spaces on the canvas) are preserved
+                // in the textual output. We simulate placing blocks using pixel->col
+                // mapping and include gap columns between blocks when needed.
+                try {
+                    const globalMinX_est = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
+                    const columnPixelWidth_est = unit > 0 ? unit : 100;
+                    let neededColumnsFromGaps = 0;
+                    for (const r of rows) {
+                        const blocksInRow = r.blocks.slice().sort((a,b)=>a.x - b.x);
+                        let currentColSim = 0;
+                        for (const b of blocksInRow) {
+                            const approxCol = Math.max(0, Math.round((b.x - globalMinX_est) / columnPixelWidth_est));
+                            const gapCols = Math.max(0, approxCol - currentColSim);
+                            const span = spanFor(b);
+                            currentColSim += gapCols + Math.max(1, span);
+                        }
+                        neededColumnsFromGaps = Math.max(neededColumnsFromGaps, currentColSim);
+                    }
+                    // Use neededColumnsFromGaps as another inference source
+                    columns = Math.max(columns, Math.max(1, Math.round(neededColumnsFromGaps)));
+                    console.log('DEBUG: inferred columns from gaps =', neededColumnsFromGaps, '-> using columns =', columns);
+                } catch (e) {
+                    // Non-fatal; continue with previous columns
+                }
             }
 
-            const out = ['block', `columns ${columns}`];
-            for (const t of topLevel) {
-                out.push(emitBlockRecursive(t));
+            // Ensure we honor the original parsed `columns N` as a minimum baseline
+            if (originalColumns && originalColumns > 0) {
+                columns = Math.max(columns || 1, originalColumns);
             }
+
+            let out = ['block', `columns ${columns}`];
+            // Emit top-level blocks. Prefer to emit rows as inline token lines (so we can emit 'space' tokens)
+            // when a row contains only leaf blocks (no children). If a row contains parent blocks,
+            // fall back to the recursive emitter which handles nested 'block:ID ... end' sections.
+            const rows = [];
+            const rowTolerance = 40; // px tolerance to group blocks into the same row
+            for (const b of topLevel) {
+                let placed = false;
+                for (const r of rows) {
+                    if (Math.abs(r.y - b.y) <= rowTolerance) { r.blocks.push(b); placed = true; break; }
+                }
+                if (!placed) rows.push({ y: b.y, blocks: [b] });
+            }
+
+            // Infer required columns from actual pixel gaps between blocks so visible
+            // ghost spaces on the canvas are preserved in emitted textual output.
+            try {
+                const globalMinX_emit = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
+                const columnPixelWidth_emit = unit > 0 ? unit : 100;
+                let neededColumnsFromGapsEmit = 0;
+                for (const r of rows) {
+                    const blocksInRow = r.blocks.slice().sort((a,b)=>a.x - b.x);
+                    let currentColSim = 0;
+                    for (const b of blocksInRow) {
+                        const approxCol = Math.max(0, Math.round((b.x - globalMinX_emit) / columnPixelWidth_emit));
+                        const gapCols = Math.max(0, approxCol - currentColSim);
+                        const span = spanFor(b);
+                        currentColSim += gapCols + Math.max(1, span);
+                    }
+                    neededColumnsFromGapsEmit = Math.max(neededColumnsFromGapsEmit, currentColSim);
+                }
+                columns = Math.max(columns || 1, Math.max(1, Math.round(neededColumnsFromGapsEmit)));
+                console.log('DEBUG: columns after gap-inference =', columns);
+                // Ensure the output header reflects the possibly-updated columns
+                out[1] = `columns ${columns}`;
+            } catch (e) { /* ignore */ }
+
+            // Helper to emit a token for a single block (leaf or parent token)
+            function tokenForBlock(b) {
+                if (!b) return '';
+                if (allBlocks.some(x => x.parentId === b.id)) {
+                    // Parent token (emit as block:ID label) - children will be emitted inline via recursive emitter
+                    const label = (b.text && !b._isInvisibleParent) ? `["${escapeLabel(b.text)}"]` : '';
+                    return `block:${b.id}${label}`;
+                } else {
+                    const span = spanFor(b);
+                    const label = b.text ? `["${escapeLabel(b.text)}"]` : '';
+                    return `${b.id}${span > 1 ? `:${span}` : ''}${label}`;
+                }
+            }
+
+            // Overall left-most x used for gap calculations (pixel coordinate)
+            const globalMinX = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
+            const columnPixelWidth = unit > 0 ? unit : 100; // pixel width corresponding to one column
+
+            for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                const r = rows[rowIdx];
+                const blocksInRow = r.blocks.slice().sort((a,b)=>a.x - b.x);
+                const rowHasParents = blocksInRow.some(b => allBlocks.some(x => x.parentId === b.id));
+                if (!rowHasParents) {
+                    // Build an inline token line with 'space' tokens for gaps using column indices
+                    const tokens = [];
+                    let currentColIndex = 0;
+
+                    for (const b of blocksInRow) {
+                        // Map the block's x position to an approximate column index
+                        // Map block x -> column index using floor-based mapping with a small bias
+                        // Map block x -> column index using rounding (more stable than biased floor)
+                        // Map block x -> column index using rounding and clamp to last column
+                        let approxCol = Math.max(0, Math.round((b.x - globalMinX) / columnPixelWidth));
+                        if (typeof columnsLocal === 'number' && columnsLocal > 0) approxCol = Math.min(columnsLocal - 1, approxCol);
+                        let gapCols = Math.max(0, approxCol - currentColIndex);
+                        // Clamp gapCols so we don't exceed total columns
+                        if (currentColIndex + gapCols > columns) gapCols = Math.max(0, columns - currentColIndex);
+
+                        // Reserve room for the block so emitting a preceding 'space' doesn't
+                        // push the row over the column limit when we later emit the block.
+                        // Compute desired span for this block and limit gapCols so that
+                        // currentColIndex + gapCols + desiredSpan <= columns (best-effort).
+                        const desiredSpan = spanFor(b);
+                        const maxAllowGap = Math.max(0, columns - currentColIndex - Math.min(desiredSpan, columns));
+                        if (gapCols > maxAllowGap) gapCols = maxAllowGap;
+
+                        if (gapCols > 0) {
+                            const spaces = Math.max(1, gapCols);
+                            tokens.push(`space${spaces>1?`:${spaces}`:''}`);
+                            currentColIndex += spaces;
+                        }
+
+                        // Emit the block token with its span, but clamp span to remaining columns
+                        const remaining = Math.max(0, columns - currentColIndex);
+                        let span;
+                        if (remaining <= 0) {
+                            // No explicit remaining columns, but prefer emitting visible blocks.
+                            // Place the block in the last column with span=1 (best-effort).
+                            span = 1;
+                            // If columns is defined, set currentColIndex to columns - 1 to reflect placement
+                            if (typeof columns === 'number' && columns > 0) currentColIndex = Math.max(0, columns - 1);
+                        } else {
+                            span = Math.min(spanFor(b), remaining);
+                        }
+                        // Build token; tokenForBlock would include original span, but we need to ensure
+                        // the emitted token uses the possibly-clamped span. Reconstruct token here.
+                        if (allBlocks.some(x => x.parentId === b.id)) {
+                            const label = (b.text && !b._isInvisibleParent) ? `["${escapeLabel(b.text)}"]` : '';
+                            tokens.push(`block:${b.id}${label}`);
+                        } else {
+                            const label = b.text ? `["${escapeLabel(b.text)}"]` : '';
+                            tokens.push(`${b.id}${span>1?`:${span}`:''}${label}`);
+                        }
+                        currentColIndex += span;
+                        // If we've filled the row, stop emitting further tokens for this row
+                        if (currentColIndex >= columns) break;
+                    }
+
+                    // Pad non-final rows so the sum of token spans equals the total columns
+                    const isLastRow = (rowIdx === rows.length - 1);
+                    if (!isLastRow && currentColIndex < columns) {
+                        const remaining = columns - currentColIndex;
+                        tokens.push(`space${remaining>1?`:${remaining}`:''}`);
+                        currentColIndex += remaining;
+                    }
+
+                    out.push('  ' + tokens.join(' '));
+                } else {
+                    // Fallback: emit each top-level block recursively in order
+                    for (const b of blocksInRow) out.push(emitBlockRecursive(b));
+                }
+            }
+            
+            // Add connections/arrows
+            if (typeof connections !== 'undefined' && connections.length > 0) {
+                out.push(''); // Empty line before connections
+                connections.forEach(conn => {
+                    const arrowType = conn.arrowType || '-->';
+                    if (conn.label && conn.label.trim()) {
+                        out.push(`  ${conn.from} -- "${conn.label}" ${arrowType} ${conn.to}`);
+                    } else {
+                        out.push(`  ${conn.from} ${arrowType} ${conn.to}`);
+                    }
+                });
+            }
+            
+            // Add classDef and class statements for colors
+            const colorMap = new Map();
+            let colorCounter = 1;
+            
+            // Collect all blocks with colors
+            const coloredBlocks = allBlocks.filter(b => b.color);
+            
+            if (coloredBlocks.length > 0) {
+                out.push(''); // Empty line before styling
+                
+                // Generate classDef statements for unique colors
+                coloredBlocks.forEach(block => {
+                    const color = block.color.startsWith('#') ? block.color : '#' + block.color;
+                    if (!colorMap.has(color)) {
+                        const className = `color${colorCounter++}`;
+                        colorMap.set(color, className);
+                        out.push(`  classDef ${className} fill:${color},stroke:#333,stroke-width:2px;`);
+                    }
+                });
+                
+                // Generate class statements to assign blocks to color classes
+                coloredBlocks.forEach(block => {
+                    const color = block.color.startsWith('#') ? block.color : '#' + block.color;
+                    const className = colorMap.get(color);
+                    if (className) {
+                        out.push(`  class ${block.id} ${className}`);
+                    }
+                });
+            }
+            
             return out.join('\n') + '\n';
         }
 
@@ -1428,7 +2270,7 @@
                 return;
             }
             try {
-                const { title, blocks: newBlocks } = parseBlockDiagramInput(input);
+                const { title, blocks: newBlocks, connections: newConnections } = parseBlockDiagramInput(input);
                 // Snap loaded blocks to the app grid so they align to the squares
                 // Snap down to nearest grid cell (floor) so blocks align without growing unexpectedly
                 const snapFloor = v => Math.floor(v / gridSize) * gridSize;
@@ -1441,6 +2283,7 @@
 
                 diagramTitleInput.value = title;
                 blocks = newBlocks;
+                connections = (newConnections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, from: c.from, to: c.to, label: c.label || '' }));
                 selectedBlocks.clear();
                 draw();
                 updateMarkdown();
@@ -1540,6 +2383,14 @@ columns 2
   Frontend
   Backend
   Frontend --> Backend`
+                },
+                {
+                    name: 'Blocks with labeled connections',
+                    input: `block
+columns 2
+  API
+  Database  
+  API --> |"queries"| Database`
                 }
             ];
             
@@ -1549,7 +2400,7 @@ columns 2
                 
                 try {
                     // Step 1: Parse input into blocks
-                    const { title, blocks: parsedBlocks } = parseBlockDiagramInput(testCase.input);
+                    const { title, blocks: parsedBlocks, connections: parsedConnections } = parseBlockDiagramInput(testCase.input);
                     console.log('✅ Parsing successful');
                     console.log('Parsed blocks with positions:');
                     parsedBlocks.forEach(b => {
@@ -1558,14 +2409,16 @@ columns 2
                     
                     // Step 2: Simulate the blocks being loaded
                     const originalBlocks = [...blocks];
+                    const originalConnections = [...connections];
                     blocks = parsedBlocks;
+                    connections = parsedConnections || [];
                     
                     // Step 3: Generate output from those blocks
                     const output = generateMermaidBlockDiagram(parsedBlocks);
                     console.log('Generated output:', output);
                     
                     // Step 4: Parse the generated output back
-                    const { blocks: reparsedBlocks } = parseBlockDiagramInput(output);
+                    const { blocks: reparsedBlocks, connections: reparsedConnections } = parseBlockDiagramInput(output);
                     console.log('✅ Re-parsing successful, blocks:', reparsedBlocks.map(b => ({ id: b.id, text: b.text, parentId: b.parentId })));
                     
                     // Step 5: Compare structures
@@ -1583,8 +2436,9 @@ columns 2
                         console.log('Reparsed:', reparsedStructure);
                     }
                     
-                    // Restore original blocks
+                    // Restore original state
                     blocks = originalBlocks;
+                    connections = originalConnections;
                     
                 } catch (error) {
                     console.error('❌ Test failed:', error);
@@ -1599,7 +2453,7 @@ columns 2
         document.addEventListener('DOMContentLoaded', () => {
             const testBtn = document.createElement('button');
             testBtn.innerText = '🧪 Run Tests';
-            testBtn.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 1000; padding: 5px 10px; background: #007acc; color: white; border: none; border-radius: 3px; cursor: pointer;';
+            testBtn.className = 'test-button';
             testBtn.onclick = () => {
                 console.clear();
                 runRoundTripTest();

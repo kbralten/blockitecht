@@ -69,6 +69,8 @@ if (detectVerticalText) {
     // Fallback: no vertical span detection
     detectAndCreateVerticalSpans = (topLevelBlocks) => topLevelBlocks;
 }
+// Expose for generators that expect it on the global scope
+global.detectAndCreateVerticalSpans = detectAndCreateVerticalSpans;
 
 let generateMermaidBlockDiagram;
 if (genText) {
@@ -432,11 +434,18 @@ testCases.forEach((testCase, index) => {
 
             const origParent = orig.parentId || null;
             const repParent = rep.parentId || null;
-            if (origParent !== repParent) diffs.push(`Parent mismatch for '${id}': original=${origParent} reparsed=${repParent}`);
+            // Allow generator-created InvisibleParentN to be the parent in reparsed output
+            if (origParent !== repParent) {
+                if (!(origParent === null && repParent && /^InvisibleParent\d+$/.test(repParent))) {
+                    diffs.push(`Parent mismatch for '${id}': original=${origParent} reparsed=${repParent}`);
+                }
+            }
         }
 
         // Also detect unexpected extra blocks in the reparsed output
         for (const id of reparsedMap.keys()) {
+            // Allow InvisibleParentN blocks emitted by generator to represent vertical spans
+            if (/^InvisibleParent\d+$/.test(id)) continue;
             if (!originalMap.has(id)) diffs.push(`Unexpected extra block '${id}' found in reparsed output`);
         }
 

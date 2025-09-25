@@ -8,12 +8,19 @@
     "test:hud": "node tests/hudHarness.js",
     "test:parse": "node tests/parseHarness.js",
     "test:all": "node test.js && node tests/hudHarness.js",
-    "test:verbose": "node test.js && node tests/hudHarness.js && echo '✅ All test suites completed successfully'"
+    "test:verbose": "node test.js && node tests/hudHarness.js && echo '✅ All test suites completed successfully'",
+    "test:ui": "node tests/puppeteer/tooltip-context.test.js"
   },
   "devDependencies": {
-    "jsdom": "^22.1.0"
+    "jsdom": "^22.1.0",
+    "puppeteer": "^24.22.3"
   },
-  "keywords": ["mermaid", "diagram", "visual-editor", "block-diagram"],
+  "keywords": [
+    "mermaid",
+    "diagram",
+    "visual-editor",
+    "block-diagram"
+  ],
   "author": "",
   "license": "MIT"
 }

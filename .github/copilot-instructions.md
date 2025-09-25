@@ -198,3 +198,9 @@ node tests/parseHarness.js
 - These instructions are found to be incorrect or incomplete
 
 For typical development tasks (UI changes, parser fixes, feature additions), everything you need is documented above.
+
+### Test File Organization
+
+- **Comprehensive Tests**: The top-level `test.js` file is reserved for the comprehensive test suite that validates the entire application.
+- **One-Off Tests**: Always create new one-off or feature-specific tests in the `/tests/` folder. This keeps the top-level directory clean and ensures all smaller tests are organized in one place.
+- **Naming Convention**: Use descriptive names for one-off test files, e.g., `test-feature-name.js`, to clearly indicate their purpose.
