@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const src = fs.readFileSync('blockitecht.html', 'utf8');
+const src = fs.readFileSync('index.html', 'utf8');
 function extractFunction(source, name) {
   let idx = source.indexOf('function ' + name + '(');
   if (idx === -1) {

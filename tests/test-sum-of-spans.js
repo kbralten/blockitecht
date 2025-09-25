@@ -2,7 +2,7 @@
 const fs = require('fs');
 const assert = require('assert');
 
-const html = fs.readFileSync('blockitecht.html', 'utf8');
+const html = fs.readFileSync('index.html', 'utf8');
 
 function extractFunction(source, name) {
   let idx = source.indexOf('function ' + name + '(');
@@ -33,7 +33,7 @@ function extractFunction(source, name) {
 const parseText = extractFunction(html, 'parseBlockDiagramInput');
 const genText = extractFunction(html, 'generateMermaidBlockDiagram');
 if (!parseText || !genText) {
-  console.error('Could not extract required functions from blockitecht.html');
+  console.error('Could not extract required functions from index.html');
   process.exit(1);
 }
 

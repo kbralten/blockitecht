@@ -1,7 +1,7 @@
 const fs = require('fs');
 const assert = require('assert');
 
-const html = fs.readFileSync('blockitecht.html', 'utf8');
+const html = fs.readFileSync('index.html', 'utf8');
 
 function extractFunction(source, name) {
     let idx = source.indexOf('function ' + name + '(');
@@ -33,7 +33,7 @@ const genText = extractFunction(html, 'generateMermaidBlockDiagram');
 const detectText = extractFunction(html, 'detectAndCreateVerticalSpans');
 
 if (!parseText || !genText) {
-    console.error('Could not extract necessary functions from blockitecht.html');
+    console.error('Could not extract necessary functions from index.html');
     process.exit(1);
 }
 

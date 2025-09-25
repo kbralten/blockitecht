@@ -1,7 +1,7 @@
 // Tests for space token generation and parsing
 const fs = require('fs');
 
-const html = fs.readFileSync('blockitecht.html', 'utf8');
+const html = fs.readFileSync('index.html', 'utf8');
 
 function extractFunction(source, name) {
     let idx = source.indexOf('function ' + name + '(');

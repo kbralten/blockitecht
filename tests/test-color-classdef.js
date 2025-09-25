@@ -1,7 +1,7 @@
 const fs = require('fs');
 
 // Extract functions from the HTML file
-const html = fs.readFileSync('./blockitecht.html', 'utf8');
+const html = fs.readFileSync('./index.html', 'utf8');
 
 // Extract the parseBlockDiagramInput function
 const parseMatch = html.match(/function parseBlockDiagramInput\(input\) \{([\s\S]*?)\n\s{8}}/);

@@ -31,7 +31,7 @@ function extractFunction(htmlContent, functionName) {
 }
 
 // Read the HTML file and extract functions
-const htmlPath = path.join(__dirname, 'blockitecht.html');
+const htmlPath = path.join(__dirname, 'index.html');
 const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
 const parseText = extractFunction(htmlContent, 'parseBlockDiagramInput');

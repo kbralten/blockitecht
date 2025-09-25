@@ -12,8 +12,8 @@ const path = require('path');
 function serveStatic(root, port) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
-      let filePath = path.join(root, req.url === '/' ? '/blockitecht.html' : req.url);
-      if (filePath.endsWith('/')) filePath += 'blockitecht.html';
+      let filePath = path.join(root, req.url === '/' ? '/index.html' : req.url);
+      if (filePath.endsWith('/')) filePath += 'index.html';
       fs.readFile(filePath, (err, data) => {
         if (err) { res.statusCode = 404; res.end('Not found'); return; }
         const ext = path.extname(filePath);
@@ -35,7 +35,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 900 });
-    await page.goto(`http://localhost:${port}/blockitecht.html`, { waitUntil: 'networkidle0' });
+    await page.goto(`http://localhost:${port}/index.html`, { waitUntil: 'networkidle0' });
 
     // Wait for canvas to be ready and the app to finish initialization (canvas sized and draw() available)
     await page.waitForSelector('#canvas');

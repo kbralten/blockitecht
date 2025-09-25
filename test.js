@@ -2,7 +2,7 @@
 const fs = require('fs');
 
 // Read the HTML file and extract the JavaScript functions
-const htmlContent = fs.readFileSync('blockitecht.html', 'utf8');
+const htmlContent = fs.readFileSync('index.html', 'utf8');
 
 // Helper: extract a function's full text by finding the opening brace and
 // matching braces until the function body is balanced. This is more robust

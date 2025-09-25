@@ -12,7 +12,7 @@
 // 8. Multi-block selection handling
 //
 // The tests extract the actual buildHud/updateColorHud functions from 
-// blockitecht.html and run them in a jsdom environment with mock dependencies.
+// index.html and run them in a jsdom environment with mock dependencies.
 
 const fs = require('fs');
 const { JSDOM } = require('jsdom');
@@ -113,7 +113,7 @@ const { window } = dom;
 const { document } = window;
 
 // Load the HTML file and extract functions
-const htmlContent = fs.readFileSync('blockitecht.html', 'utf8');
+const htmlContent = fs.readFileSync('index.html', 'utf8');
 
 // Extract the necessary functions and data
 const buildHudText = extractFunction(htmlContent, 'buildHud');

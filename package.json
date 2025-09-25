@@ -2,7 +2,7 @@
   "name": "blockitecht",
   "version": "1.0.0",
   "description": "Mermaid Block Diagram Visual Editor",
-  "main": "blockitecht.html",
+  "main": "index.html",
   "scripts": {
     "test": "node test.js",
     "test:hud": "node tests/hudHarness.js",

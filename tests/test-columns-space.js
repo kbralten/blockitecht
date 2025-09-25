@@ -1,7 +1,7 @@
 const fs = require('fs');
 
 // Extract required functions from the single-file app
-const html = fs.readFileSync('./blockitecht.html', 'utf8');
+const html = fs.readFileSync('./index.html', 'utf8');
 
 function extractFunction(name) {
   const re = new RegExp(`function ${name}\\(([\\s\\S]*?)\\) \\\{([\\s\\S]*?)\\n\\s{8}\\}`, 'm');
@@ -33,7 +33,7 @@ const detectMatch = html.match(/function detectAndCreateVerticalSpans\(topLevelB
 if (detectMatch) detectFnText = `function detectAndCreateVerticalSpans(topLevelBlocks) {${detectMatch[1]}\n        }`;
 
 if (!parseFnText || !generateFnText) {
-  console.error('Failed to extract required functions from blockitecht.html');
+  console.error('Failed to extract required functions from index.html');
   process.exit(2);
 }
 

@@ -14,7 +14,7 @@ This is a **single-file web application** that provides a visual editor for crea
 
 ```
 blockitecht/
-├── blockitecht.html          # Main application (all code in one file)
+├── index.html          # Main application (all code in one file)
 ├── README.md                 # Project documentation
 ├── tests/
 │   ├── parseHarness.js      # Parser unit tests (requires jsdom)
@@ -25,7 +25,7 @@ blockitecht/
     └── launch.json          # VS Code debug configuration
 ```
 
-### Key Application Components (all in blockitecht.html)
+### Key Application Components (all in index.html)
 
 1. **Visual Canvas System** (lines 300-500)
    - Canvas-based drawing with 20px grid
@@ -60,7 +60,7 @@ blockitecht/
 
 2. **Open Application**:
    ```
-   http://localhost:8000/blockitecht.html
+   http://localhost:8000/index.html
    ```
 
 ### Testing
@@ -106,7 +106,7 @@ node tests/parseHarness.js
 
 ### Making Changes
 
-1. **Edit blockitecht.html directly** (all code is in this file)
+1. **Edit index.html directly** (all code is in this file)
 2. **Refresh browser** to see changes
 3. **Test immediately** using built-in test button
 4. **Run integration tests**: `node test.js`
@@ -170,7 +170,7 @@ node tests/parseHarness.js
 
 ## File Contents Reference
 
-### blockitecht.html Structure
+### index.html Structure
 - Lines 1-100: HTML structure and CSS styles
 - Lines 100-250: JavaScript initialization and DOM setup  
 - Lines 250-300: Helper functions and utilities

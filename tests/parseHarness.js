@@ -3,16 +3,16 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const root = path.resolve(__dirname, '..');
-const htmlPath = path.join(root, 'blockitecht.html');
+const htmlPath = path.join(root, 'index.html');
 const snippetPath = path.join(__dirname, 'snippet.html');
 
 const html = fs.readFileSync(htmlPath, 'utf8');
 const snippet = fs.readFileSync(snippetPath, 'utf8');
 
-// Extract the parseHtmlToBlocks function body from blockitecht.html
+// Extract the parseHtmlToBlocks function body from index.html
 const fnMatch = html.match(/function\s+parseHtmlToBlocks\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*\}\n/);
 if (!fnMatch) {
-  console.error('Could not find parseHtmlToBlocks in blockitecht.html');
+  console.error('Could not find parseHtmlToBlocks in index.html');
   process.exit(2);
 }
 
