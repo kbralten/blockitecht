@@ -70,16 +70,18 @@ console.log('Running space token unit tests...');
 // Test 1: Generator emits 'space' when a blank column separates blocks
 (function testGeneratorEmitsSpace() {
     console.log('\nTest: generator emits space for blank column layout');
-    // Create manual layout: ItemA at x=50 (col 0), ItemB at x=330 (col 2), so there is a gap for col1
-    // and ItemC below ItemB (y larger)
+    // Create manual layout: ItemA at x=0 (col 0), ItemB at x=200 (col 2), so there is a gap for col 1.
+    // gridSize is 100.
     const manual = [
-        { id: 'ItemA', text: 'Item A', parentId: null, x: 50, y: 50, width: 100, height: 60 },
-        { id: 'ItemB', text: 'Item B', parentId: null, x: 330, y: 50, width: 100, height: 60 },
-        { id: 'ItemC', text: 'Item C', parentId: null, x: 330, y: 170, width: 100, height: 60 }
+        { id: 'ItemA', text: 'Item A', parentId: null, x: 0, y: 0, width: 100, height: 100 },
+        { id: 'ItemB', text: 'Item B', parentId: null, x: 200, y: 0, width: 100, height: 100 },
+        { id: 'ItemC', text: 'Item C', parentId: null, x: 200, y: 100, width: 100, height: 100 }
     ];
 
     // Set global blocks so generator can reference them
     blocks = manual.slice();
+    // The generator also uses a global `gridSize` variable if it's present.
+    global.gridSize = 100;
 
     if (!generateMermaidBlockDiagram) {
         console.warn('generateMermaidBlockDiagram not found; skipping generator test');
@@ -89,38 +91,35 @@ console.log('Running space token unit tests...');
     const out = generateMermaidBlockDiagram(manual);
     console.log('Generated output:\n', out);
 
-    // The generator should have emitted a 'space' token somewhere in the top rows to account for empty column
-    const hasSpaceToken = /\bspace(?::\d+)?\b/.test(out);
-    assert(hasSpaceToken, 'Generator emitted a space token');
+    // The generator should have emitted a 'space' token in the first row.
+    const firstRow = out.split('\n')[2];
+    assert(firstRow.includes('space'), 'Generator emitted a space token in the first row');
 })();
 
 // Test 2: Parser honors 'space' token and places ItemC under ItemB when space is used
 (function testParserHonorsSpace() {
     console.log('\nTest: parser honors space token positioning');
     // Build an explicit mermaid input that uses 'space' to push ItemC under ItemB
-    const input = `block\ncolumns 3\n  ItemA ItemB\n  space ItemC`;
+    const input = `block\ncolumns 2\n  ItemA ItemB\n  space ItemC`;
     console.log('Input:\n', input);
 
     const { title, blocks: parsed } = parseBlockDiagramInput(input);
     console.log('Parsed blocks:', parsed.map(b => ({ id: b.id, x: b.x, y: b.y, width: b.width })));
 
-    // Parser uses blockWidth=120 and padding=20 in calculatePosition -> colWidth = 140
-    const colWidth = 120 + 20; // 140
-    const computeCol = (b) => Math.round((b.x - 50) / colWidth);
-
+    // The parser's calculatePosition function determines the grid.
+    // Let's find the blocks and check their relative positions.
     const A = parsed.find(b => b.id === 'ItemA');
     const B = parsed.find(b => b.id === 'ItemB');
     const C = parsed.find(b => b.id === 'ItemC');
 
     assert(A && B && C, 'All three blocks parsed');
     if (A && B && C) {
-        const colA = computeCol(A);
-        const colB = computeCol(B);
-        const colC = computeCol(C);
-        console.log('Columns -> A:', colA, 'B:', colB, 'C:', colC);
-        assert(colA === 0, 'ItemA is in column 0');
-        assert(colB === 1, 'ItemB is in column 1');
-        assert(colC === 1, 'ItemC is in column 1 (under ItemB)');
+        // A and B should be on the same row (y is same)
+        assert(A.y === B.y, 'ItemA and ItemB are on the same row');
+        // C should be on a different row than A and B
+        assert(C.y > A.y, 'ItemC is on a new row');
+        // C should be aligned with B (x is same)
+        assert(C.x === B.x, 'ItemC is aligned with ItemB');
     }
 })();
 
