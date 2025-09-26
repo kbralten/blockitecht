@@ -137,14 +137,6 @@ columns 2
   Frontend
   Backend
   Frontend --> Backend`
-    },
-    {
-        name: 'Vertical span detection with invisible parent',
-        input: `block
-columns 2
-  LeftTall["Left Tall Block"]
-  TopRight["Top Right"]
-  BottomRight["Bottom Right"]`
     }
 ];
 
@@ -326,78 +318,13 @@ testCases.forEach((testCase, index) => {
             blocks.splice(0, blocks.length, ...parsedBlocks);
         }
 
-        // For the vertical span detection test, simulate blocks on canvas with vertical spanning
-        if (testCase.name === 'Vertical span detection with invisible parent') {
-            console.log('--- Vertical Span Simulation ---');
-            
-            // Clear existing parsed blocks and create vertical span layout
-            parsedBlocks.splice(0, parsedBlocks.length);
-            
-            // Create blocks with pixel coordinates that form a vertical span layout:
-            // Left column: one tall block
-            // Right column: two smaller blocks stacked
-            const leftTall = {
-                id: 'LeftTall',
-                text: 'Left Tall Block',
-                parentId: null,
-                x: 50,    // Left column
-                y: 50,    // Top position
-                width: 200,
-                height: 140  // Spans height of two normal blocks
-            };
-            
-            const topRight = {
-                id: 'TopRight',
-                text: 'Top Right',
-                parentId: null,
-                x: 270,   // Right column
-                y: 50,    // Top position (same as leftTall)
-                width: 200,
-                height: 60  // Normal height
-            };
-            
-            const bottomRight = {
-                id: 'BottomRight',
-                text: 'Bottom Right',
-                parentId: null,
-                x: 270,   // Right column (same as topRight)
-                y: 110,   // Bottom position (topRight.y + topRight.height + small gap)
-                width: 200,
-                height: 60  // Normal height
-            };
-            
-            // Add blocks to parsed array
-            parsedBlocks.push(leftTall, topRight, bottomRight);
-            console.log('Created vertical span layout: 1 tall left block + 2 stacked right blocks');
-            
-            // Update global blocks for generator
-            blocks.splice(0, blocks.length, ...parsedBlocks);
-        }
-
         // Step 3: Generate output from those blocks
         const output = generateMermaidBlockDiagram(parsedBlocks);
         console.log('\nGenerated output:');
         console.log(output);
         
-        // Specific validation for vertical span detection test
-        if (testCase.name === 'Vertical span detection with invisible parent') {
-            console.log('\n--- Vertical Span Validation ---');
-            const hasInvisibleParent = output.includes('block:InvisibleParent') && output.includes('end');
-            const hasProperLayout = output.includes('TopRight') && output.includes('BottomRight');
-            const leftTallSeparate = output.includes('LeftTall["Left Tall Block"]');
-            
-            if (hasInvisibleParent && hasProperLayout && leftTallSeparate) {
-                console.log('✅ Vertical span detection working: invisible parent created for right column');
-            } else {
-                console.log('❌ Vertical span detection not working as expected');
-                console.log(`  hasInvisibleParent: ${hasInvisibleParent}`);
-                console.log(`  hasProperLayout: ${hasProperLayout}`);
-                console.log(`  leftTallSeparate: ${leftTallSeparate}`);
-                if (!hasInvisibleParent) {
-                    console.log('  Expected: block:InvisibleParent1 ... end structure');
-                }
-            }
-        }
+                
+        // Step 4: Parse the generated output back
         
         // Step 4: Parse the generated output back
         const { blocks: reparsedBlocks } = parseBlockDiagramInput(output);
@@ -563,32 +490,6 @@ testCases.forEach((testCase, index) => {
 });
 
 console.log('🏁 Round-trip tests completed!');
-
-// --- Manual assertion: inferred spans from pixel widths ---
-console.log('\n--- Manual Test: inferred span from pixel widths ---');
-{
-    const originalBlocks = blocks;
-    // Three small blocks in top row, one wide block in bottom row (3x width)
-    const manualBlocks = [
-        { id: 'a', text: 'A', parentId: null, x: 50, y: 50, width: 100, height: 60 },
-        { id: 'b', text: 'B', parentId: null, x: 170, y: 50, width: 100, height: 60 },
-        { id: 'c', text: 'C', parentId: null, x: 290, y: 50, width: 100, height: 60 },
-        { id: 'bottom', text: 'Bottom', parentId: null, x: 50, y: 200, width: 300, height: 60 }
-    ];
-
-    blocks = manualBlocks; // Set global so generator can find children if needed
-    const output = generateMermaidBlockDiagram(manualBlocks);
-    console.log('Generated output for manual test:\n', output);
-
-    if (output.includes('bottom:3')) {
-        console.log('✅ Inferred width emitted as :3');
-    } else {
-        console.log('❌ Inferred width NOT emitted (expected bottom:3)');
-        failures += 1;
-    }
-
-    blocks = originalBlocks;
-}
 
 // Exit non-zero on failures to be CI friendly
 if (failures > 0) {

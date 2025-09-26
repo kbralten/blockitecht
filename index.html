@@ -36,6 +36,8 @@
         .btn.secondary{background:#6b7280}
         .btn.primary{background:var(--primary)}
         .btn.ghost{background:transparent;color:var(--text);border:1px solid transparent}
+    /* SVG icon sizing inside buttons */
+    .btn svg { width: 18px; height: 18px; display: block; }
         .btn.danger{background:var(--danger)}
         .btn.purple{background:var(--purple)}
         .btn:disabled{opacity:0.6;cursor:not-allowed}
@@ -247,6 +249,17 @@
             box-shadow: 0 6px 18px rgba(0,0,0,0.18);
         }
 
+        /* Start-tag control styles (moved from inline attributes) */
+        .start-tag-wrapper { display:flex; align-items:center; gap:8px; margin-left:8px; }
+        .start-tag-label { margin:0 6px 0 0; font-size:0.85rem; color:var(--muted); }
+        .start-tag-select { padding:6px; border-radius:8px; border:1px solid #d1d5db; background:white; font-weight:600; }
+
+    /* Modal settings styles */
+    .modal-settings { display:flex; gap:12px; align-items:center; }
+    .modal-settings-row { display:flex; gap:12px; align-items:center; margin-left:12px; }
+    .modal-settings-label { display:flex; align-items:center; gap:8px; margin:0; }
+    .modal-settings-note { font-size:0.9rem; color:var(--muted); }
+
     </style>
 </head>
 <body>
@@ -263,7 +276,12 @@
                 <button id="clear-styles" class="btn purple">Clear styles</button>
                 <button id="fit-diagram" class="btn ghost">Fit Diagram</button>
                 <button id="arrow-mode" class="btn secondary">🔗 Arrow Mode</button>
-                <button id="toggle-ghost-spaces" class="btn ghost">Ghost spaces: On</button>
+                <!-- Settings button opens the new Settings modal -->
+                <button id="open-settings" class="btn ghost" title="Settings" aria-label="Settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M19.4 12.9a7.5 7.5 0 000-1.8l2.1-1.6-2-3.5-2.5.7a7.5 7.5 0 00-1.5-.9l-.4-2.6H9.9l-.4 2.6a7.5 7.5 0 00-1.5.9L5.5 6.9 3.5 10.4l2.1 1.6a7.5 7.5 0 000 1.8L3.5 15.4l2 3.5 2.5-.7c.5.4 1 .7 1.5.9l.4 2.6h4.2l.4-2.6c.5-.2 1-.5 1.5-.9l2.5.7 2-3.5-2.1-1.6zM12 15.5A3.5 3.5 0 1112 8.5a3.5 3.5 0 010 7z"></path>
+                    </svg>
+                </button>
                 <div id="arrow-indicator" class="arrow-indicator hidden">🔗 Arrow Mode</div>
             </div>
         </header>
@@ -324,9 +342,39 @@
                 <textarea id="load-input" class="w-full h-48 p-2 border border-gray-300 rounded-lg mt-1 font-mono text-sm" placeholder="block&#10;columns 3&#10;  A&#10;  B&#10;  C"></textarea>
             </div>
             <div class="load-footer">
-                <button id="load-confirm-btn" class="btn primary">Load Diagram</button>
+                    <div class="modal-settings">
+                        <button id="load-confirm-btn" class="btn primary">Load Diagram</button>
+                    </div>
+                </div>
             </div>
             <p id="load-error" class="error-text hidden"></p>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header-row">
+                <h2 class="modal-title">Settings</h2>
+                <button id="close-settings-modal" class="modal-close">&times;</button>
+            </div>
+            <div class="panel-body">
+                <div class="modal-settings">
+                    <div class="modal-settings-row">
+                        <label class="modal-settings-label">
+                            <input type="checkbox" id="settings-ghost-spaces" />
+                            <span class="modal-settings-note">Show ghost spaces</span>
+                        </label>
+                        <label class="modal-settings-label">
+                            <span class="modal-settings-note">Start tag</span>
+                            <select id="settings-start-tag-select" class="start-tag-select">
+                                <option value="block">block</option>
+                                <option value="block-beta">block-beta</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -360,9 +408,9 @@
         const loadError = document.getElementById('load-error');
 
         // --- STATE VARIABLES ---
-        const gridSize = 20;
+        const gridSize = 100;
         let blocks = [];
-        let connections = []; // Array to store arrow connections {from: blockId, to: blockId, label?: string}
+        let connections = []; // Array to store arrow connections {fromId: blockId, toId: blockId, label?: string}
     // Disable autosave during initialization to avoid overwriting existing storage with empty state
     let autosaveEnabled = false;
         let selectedBlocks = new Set();
@@ -373,6 +421,9 @@
     let connectionCounter = 1; // internal connection id counter
     let activeContextMenuConnection = null; // connection object for context menu actions
     let showGhostSpaces = true; // toggle for visualizing space tokens
+    // Which start tag to emit at the top of generated mermaid ('block' or 'block-beta')
+    let diagramStartTag = localStorage.getItem('diagramStartTag') || 'block';
+    const startTagSelect = document.getElementById('start-tag-select');
         let startX, startY, dragOffsetX, dragOffsetY, resizeHandle;
         let dragStartStates = new Map();
 
@@ -473,9 +524,22 @@
             while (p) { depth++; p = getParent(p); }
             return depth;
         }
+        
+        function getVisualPadding(block) {
+            const depth = getDepth(block);
+            const basePadding = 5; // 5px padding for top-level blocks
+            return basePadding + (depth * basePadding);
+        }
 
         const getTopBlockAtPos = (pos) => {
-            const clickedBlocks = blocks.filter(b => pos.x >= b.x && pos.x <= b.x + b.width && pos.y >= b.y && pos.y <= b.y + b.height);
+            const clickedBlocks = blocks.filter(b => {
+                const padding = getVisualPadding(b);
+                const visualX = b.x + padding;
+                const visualY = b.y + padding;
+                const visualWidth = b.width - (2 * padding);
+                const visualHeight = b.height - (2 * padding);
+                return pos.x >= visualX && pos.x <= visualX + visualWidth && pos.y >= visualY && pos.y <= visualY + visualHeight;
+            });
             return clickedBlocks.length > 0 ? clickedBlocks.sort((a, b) => getDepth(a) - getDepth(b)).pop() : null;
         };
         
@@ -543,27 +607,35 @@
             const sortedBlocks = [...blocks].sort((a, b) => getDepth(a) - getDepth(b));
             sortedBlocks.forEach(block => {
                 const isParent = blocks.some(b => b.parentId === block.id);
+                const padding = getVisualPadding(block);
+                
+                // Calculate visual bounds with padding
+                const visualX = block.x + padding;
+                const visualY = block.y + padding;
+                const visualWidth = block.width - (2 * padding);
+                const visualHeight = block.height - (2 * padding);
+                
                 // If block has color, use it; otherwise fallback to existing scheme
                 if (block.color) {
                     // fill with color, subtle alpha
                     ctx.fillStyle = hexToRgba(block.color, 0.15);
-                    ctx.fillRect(block.x, block.y, block.width, block.height);
+                    ctx.fillRect(visualX, visualY, visualWidth, visualHeight);
                     ctx.strokeStyle = block.color;
                 } else {
                     ctx.fillStyle = selectedBlocks.has(block) ? 'rgba(59, 130, 246, 0.3)' : isParent ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)';
-                    ctx.fillRect(block.x, block.y, block.width, block.height);
+                    ctx.fillRect(visualX, visualY, visualWidth, visualHeight);
                     ctx.strokeStyle = isParent ? '#059669' : '#3B82F6';
                 }
                 ctx.lineWidth = 2;
-                ctx.strokeRect(block.x, block.y, block.width, block.height);
+                ctx.strokeRect(visualX, visualY, visualWidth, visualHeight);
                 // Always use a dark text color because the palette uses light pastels
                 ctx.fillStyle = '#111827';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
                 ctx.font = '14px Inter';
                 const lines = (block.text || '').split('\n');
-                const startYPos = block.y + 8;
-                lines.forEach((line, i) => ctx.fillText(line, block.x + block.width / 2, startYPos + i * 16));
+                const startYPos = visualY + 8;
+                lines.forEach((line, i) => ctx.fillText(line, visualX + visualWidth / 2, startYPos + i * 16));
             });
             selectedBlocks.forEach(drawResizeHandles);
             
@@ -575,8 +647,8 @@
             const blockMap = new Map(blocks.map(b => [b.id, b]));
             
             connections.forEach(conn => {
-                const fromBlock = blockMap.get(conn.from);
-                const toBlock = blockMap.get(conn.to);
+                const fromBlock = blockMap.get(conn.fromId);
+                const toBlock = blockMap.get(conn.toId);
                 
                 if (!fromBlock || !toBlock) return; // Skip if blocks don't exist
                 
@@ -761,9 +833,24 @@
     document.addEventListener('click', (e)=>{ if (colorHud && !colorHud.contains(e.target)) { colorHud.classList.add('hidden'); } });
 
     function drawResizeHandles(block) {
+            const padding = getVisualPadding(block);
+            const visualX = block.x + padding;
+            const visualY = block.y + padding;
+            const visualWidth = block.width - (2 * padding);
+            const visualHeight = block.height - (2 * padding);
+            
             const size = 8, h = size / 2;
-            const {x, y, width, height} = block, midX = x + width/2, midY = y + height/2;
-            const handles = [ {x, y}, {x: midX, y}, {x: x+width, y}, {x, y: midY}, {x: x+width, y: midY}, {x, y: y+height}, {x: midX, y: y+height}, {x: x+width, y: y+height}];
+            const midX = visualX + visualWidth/2, midY = visualY + visualHeight/2;
+            const handles = [ 
+                {x: visualX, y: visualY}, 
+                {x: midX, y: visualY}, 
+                {x: visualX+visualWidth, y: visualY}, 
+                {x: visualX, y: midY}, 
+                {x: visualX+visualWidth, y: midY}, 
+                {x: visualX, y: visualY+visualHeight}, 
+                {x: midX, y: visualY+visualHeight}, 
+                {x: visualX+visualWidth, y: visualY+visualHeight}
+            ];
             ctx.fillStyle = '#3B82F6';
             handles.forEach(p => ctx.fillRect(p.x - h, p.y - h, size, size));
         }
@@ -780,64 +867,28 @@
     }
 
     // Draw subtle 'ghost' rectangles on the canvas to show where the generator
-    // will emit `space` tokens between top-level blocks. This mirrors the logic
-    // in generateMermaidBlockDiagram() but only for visualization (non-persistent).
+    // will emit `space` tokens between top-level blocks. Now uses simple grid-based calculations.
     function drawGhostSpaces() {
         if (!showGhostSpaces) return;
         if (!Array.isArray(blocks) || blocks.length === 0) return;
+        
         // Top-level blocks only (spaces are applied between top-level columns)
         const topLevel = blocks.filter(b => !b.parentId);
         if (topLevel.length === 0) return;
 
-    // Compute an inferred grid unit similar to the generator (use median block width to be robust to outliers)
-    const pixelWidths = blocks.map(b => b.width || 0).filter(w => w > 0);
-    const unit = pixelWidths.length > 0 ? (function(){ const a = pixelWidths.slice().sort((x,y)=>x-y); const m = Math.floor(a.length/2); return (a.length % 2 === 1) ? a[m] : Math.round((a[m-1] + a[m]) / 2); })() : 100;
-        const gridUnit = unit > 0 ? unit : 100;
-
-        // Group top-level blocks into rows (same tolerance used by the generator)
-        const rowTolerance = 40; // px
+        // Group top-level blocks into rows using grid-based tolerance
+        const rowTolerance = gridSize / 2; // Half grid size tolerance
         const rows = [];
         for (const b of topLevel) {
             let placed = false;
             for (const r of rows) {
-                if (Math.abs(r.y - b.y) <= rowTolerance) { r.blocks.push(b); placed = true; break; }
+                if (Math.abs(r.y - b.y) <= rowTolerance) { 
+                    r.blocks.push(b); 
+                    placed = true; 
+                    break; 
+                }
             }
             if (!placed) rows.push({ y: b.y, blocks: [b] });
-        }
-
-        // Overall left-most x used for gap calculations (pixel coordinate)
-        const globalMinX = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
-        const columnPixelWidth = unit > 0 ? unit : 100;
-
-        // Determine columns locally (mirror generator's logic) so the ghost visuals
-        // don't rely on a non-existent global `columns` variable which would throw.
-        const spanForLocal = (block) => {
-            if (block.blockWidth && Number.isFinite(block.blockWidth)) return Math.max(1, block.blockWidth);
-            if (block.width && unit > 0) return Math.max(1, Math.round(block.width / unit));
-            return 1;
-        };
-
-        let columnsLocal = null;
-        if (topLevel.length > 0 && typeof topLevel[0]._diagramColumns === 'number') {
-            columnsLocal = Math.max(...topLevel.map(b => b._diagramColumns || 0));
-        }
-        if (!columnsLocal || columnsLocal <= 0) {
-            const rowToleranceForColumns = rowTolerance;
-            const rowsForColumns = [];
-            for (const b of topLevel) {
-                let placed = false;
-                for (const r of rowsForColumns) {
-                    if (Math.abs(r.y - b.y) <= rowToleranceForColumns) { r.blocks.push(b); placed = true; break; }
-                }
-                if (!placed) rowsForColumns.push({ y: b.y, blocks: [b] });
-            }
-            let maxRowSpan = 1;
-            for (const r of rowsForColumns) {
-                let rowSum = 0;
-                for (const b of r.blocks) rowSum += spanForLocal(b);
-                maxRowSpan = Math.max(maxRowSpan, rowSum);
-            }
-            columnsLocal = Math.max(1, Math.round(maxRowSpan));
         }
 
         // Visual style for ghost boxes
@@ -847,39 +898,64 @@
         ctx.lineWidth = 1;
         ctx.setLineDash([6, 6]);
 
-        for (const r of rows) {
-            const blocksInRow = r.blocks.slice().sort((a, b) => a.x - b.x);
-            const rowHasParents = blocksInRow.some(b => blocks.some(x => x.parentId === b.id));
-            if (rowHasParents) continue;
+        for (const row of rows) {
+            const rowBlocks = row.blocks.slice().sort((a, b) => a.x - b.x);
+            // Do not skip rows that contain parent/container blocks —
+            // treat parents like regular blocks for space calculation so
+            // leading/trailing spaces are inferred consistently.
 
-            // Height for the ghost area: use tallest block in the row or a sensible default
-            const rowHeight = Math.max(...blocksInRow.map(b => b.height || (gridSize * 3)), gridSize * 3);
-            const rowY = r.y;
+            // Height for the ghost area: use tallest block in the row
+            const rowHeight = Math.max(...rowBlocks.map(b => b.height || gridSize), gridSize);
+            const rowY = row.y;
+            
+            // Use global leftmost position across all rows
+            const globalLeftmostX = Math.min(...rows.flatMap(r => r.blocks.map(b => b.x)));
+            const leftmostX = Math.min(...rowBlocks.map(b => b.x));
 
-            let currentColIndex = 0;
-            for (const b of blocksInRow) {
-                    // Map block x -> column index using floor-based mapping with a small bias
-                    // This makes small pixel offsets less likely to flip the column and stabilizes space detection.
-                    // Map block x -> column index using a robust rounding strategy to avoid
-                    // off-by-one errors when blocks are near column boundaries.
-                    // Map block x -> column index using rounding and clamp to last column so
-                    // blocks slightly beyond the right edge are still emitted in the last column.
-                    let approxCol = Math.max(0, Math.round((b.x - globalMinX) / columnPixelWidth));
-                    if (typeof columns === 'number' && columns > 0) approxCol = Math.min(columns - 1, approxCol);
-                let gapCols = Math.max(0, approxCol - currentColIndex);
-                if (currentColIndex + gapCols > columnsLocal) gapCols = Math.max(0, columnsLocal - currentColIndex);
-                if (gapCols > 0) {
-                    const ghostWidth = gapCols * columnPixelWidth;
-                    const ghostX = globalMinX + currentColIndex * columnPixelWidth;
+            // Draw leading spaces if this row starts after the global left
+            const leadingSpaceGrids = Math.round((leftmostX - globalLeftmostX) / gridSize);
+            if (leadingSpaceGrids > 0) {
+                const ghostX = globalLeftmostX;
+                const ghostWidth = leadingSpaceGrids * gridSize;
+                ctx.fillRect(ghostX, rowY, ghostWidth, rowHeight);
+                ctx.strokeRect(ghostX + 0.5, rowY + 0.5, ghostWidth - 1, rowHeight - 1);
+            }
+
+            let currentGridCol = leadingSpaceGrids;
+            for (const block of rowBlocks) {
+                // Convert pixel position to grid column
+                const blockGridCol = Math.round((block.x - globalLeftmostX) / gridSize);
+                const blockGridSpan = Math.max(1, Math.round(block.width / gridSize));
+                
+                // Draw ghost spaces for gaps between blocks
+                const gapSize = blockGridCol - currentGridCol;
+                if (gapSize > 0) {
+                    const ghostX = globalLeftmostX + currentGridCol * gridSize;
+                    const ghostWidth = gapSize * gridSize;
                     ctx.fillRect(ghostX, rowY, ghostWidth, rowHeight);
                     ctx.strokeRect(ghostX + 0.5, rowY + 0.5, ghostWidth - 1, rowHeight - 1);
-                    currentColIndex += gapCols;
                 }
-
-                // Advance currentColIndex by the block's span (rounded/clamped)
-                const blockSpan = Math.min(Math.max(1, Math.round((b.width || columnPixelWidth) / columnPixelWidth)), Math.max(1, columnsLocal - currentColIndex));
-                currentColIndex += blockSpan;
-                if (currentColIndex >= columnsLocal) break;
+                
+                currentGridCol = blockGridCol + blockGridSpan;
+            }
+            
+            // Calculate total columns needed and draw trailing spaces
+            const maxColumns = Math.max(...rows.map(r => {
+                const blocks = r.blocks.slice();
+                if (blocks.length === 0) return 1;
+                return blocks.reduce((max, b) => {
+                    const col = Math.round((b.x - globalLeftmostX) / gridSize);
+                    const span = Math.max(1, Math.round(b.width / gridSize));
+                    return Math.max(max, col + span);
+                }, 1);
+            }));
+            
+            const remainingCols = maxColumns - currentGridCol;
+            if (remainingCols > 0) {
+                const ghostX = globalLeftmostX + currentGridCol * gridSize;
+                const ghostWidth = remainingCols * gridSize;
+                ctx.fillRect(ghostX, rowY, ghostWidth, rowHeight);
+                ctx.strokeRect(ghostX + 0.5, rowY + 0.5, ghostWidth - 1, rowHeight - 1);
             }
         }
 
@@ -892,16 +968,23 @@
         
         function isOverResizeHandle(pos, block) {
             if (!selectedBlocks.has(block)) return null;
-            const h = 4, {x, y, width, height} = block, midX = x+width/2, midY = y+height/2;
+            
+            const padding = getVisualPadding(block);
+            const visualX = block.x + padding;
+            const visualY = block.y + padding;
+            const visualWidth = block.width - (2 * padding);
+            const visualHeight = block.height - (2 * padding);
+            
+            const h = 4, midX = visualX + visualWidth/2, midY = visualY + visualHeight/2;
             const inRange = (val, min, max) => val >= min-h && val <= max+h;
-            if(inRange(pos.x, x, x) && inRange(pos.y, y, y)) return 'nw';
-            if(inRange(pos.x, x+width, x+width) && inRange(pos.y, y, y)) return 'ne';
-            if(inRange(pos.x, x, x) && inRange(pos.y, y+height, y+height)) return 'sw';
-            if(inRange(pos.x, x+width, x+width) && inRange(pos.y, y+height, y+height)) return 'se';
-            if(inRange(pos.x, midX, midX) && inRange(pos.y, y, y)) return 'n';
-            if(inRange(pos.x, midX, midX) && inRange(pos.y, y+height, y+height)) return 's';
-            if(inRange(pos.x, x, x) && inRange(pos.y, midY, midY)) return 'w';
-            if(inRange(pos.x, x+width, x+width) && inRange(pos.y, midY, midY)) return 'e';
+            if(inRange(pos.x, visualX, visualX) && inRange(pos.y, visualY, visualY)) return 'nw';
+            if(inRange(pos.x, visualX+visualWidth, visualX+visualWidth) && inRange(pos.y, visualY, visualY)) return 'ne';
+            if(inRange(pos.x, visualX, visualX) && inRange(pos.y, visualY+visualHeight, visualY+visualHeight)) return 'sw';
+            if(inRange(pos.x, visualX+visualWidth, visualX+visualWidth) && inRange(pos.y, visualY+visualHeight, visualY+visualHeight)) return 'se';
+            if(inRange(pos.x, midX, midX) && inRange(pos.y, visualY, visualY)) return 'n';
+            if(inRange(pos.x, midX, midX) && inRange(pos.y, visualY+visualHeight, visualY+visualHeight)) return 's';
+            if(inRange(pos.x, visualX, visualX) && inRange(pos.y, midY, midY)) return 'w';
+            if(inRange(pos.x, visualX+visualWidth, visualX+visualWidth) && inRange(pos.y, midY, midY)) return 'e';
             return null;
         }
 
@@ -939,7 +1022,7 @@
                     selectedBlocks.add(topBlock);
                 } else if (arrowStart && topBlock !== arrowStart) {
                     // Second click - create connection
-                    const newConnection = { _id: `conn${connectionCounter++}`, from: arrowStart.id, to: topBlock.id, label: '', arrowType: '-->' };
+                    const newConnection = { _id: `conn${connectionCounter++}`, fromId: arrowStart.id, toId: topBlock.id, label: '', arrowType: '-->' };
                     connections.push(newConnection);
                     arrowStart = null;
                     selectedBlocks.clear();
@@ -972,7 +1055,7 @@
                 if (!e.ctrlKey && !e.shiftKey) selectedBlocks.clear();
                 if (e.button !== 2 && !arrowMode) {
                     drawing = true; startX = snapToGrid(pos.x); startY = snapToGrid(pos.y);
-                    currentBlock = { id: generateFriendlyId(), parentId: null, x: startX, y: startY, width: 0, height: 0, text: 'New Block' };
+                    currentBlock = { id: generateFriendlyId(), parentId: null, x: startX, y: startY, width: gridSize, height: gridSize, label: 'New Block' };
                     blocks.push(currentBlock);
                 }
             }
@@ -1144,7 +1227,8 @@
         function showTextEditor(block) {
             editingBlock = block;
             Object.assign(textEditor.style, { display: 'block', left: `${block.x}px`, top: `${block.y}px`, width: `${block.width}px`, height: `${block.height}px` });
-            textEditor.value = block.text.replace(/\\n/g, '\n'); textEditor.focus(); textEditor.select();
+            const currentText = block.label || block.text || '';
+            textEditor.value = currentText.replace(/\\n/g, '\n'); textEditor.focus(); textEditor.select();
             // Ensure the connection tooltip is hidden while the text editor is focused for editing blocks
             const tooltip = document.getElementById('conn-tooltip'); if (tooltip) tooltip.classList.add('hidden');
         }
@@ -1159,7 +1243,9 @@
                 return;
             }
             if (!editingBlock) return;
-            editingBlock.text = textEditor.value.replace(/\n/g, '\\n');
+            const newText = textEditor.value.replace(/\n/g, '\\n');
+            editingBlock.label = newText;
+            editingBlock.text = newText; // Keep backward compatibility
             editingBlock = null; textEditor.style.display = 'none'; draw(); updateMarkdown();
         }
         textEditor.addEventListener('blur', hideTextEditor);
@@ -1209,7 +1295,7 @@
     window.addEventListener('click', e => { if (!contextMenu.contains(e.target)) hideContextMenu(); });
         canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-        const createAndAddBlock = (props) => { blocks.push({ id: generateFriendlyId(), parentId: activeContextMenuBlock.parentId, text: 'New Block', ...props }); hideContextMenu(); draw(); updateMarkdown(); };
+        const createAndAddBlock = (props) => { blocks.push({ id: generateFriendlyId(), parentId: activeContextMenuBlock.parentId, label: 'New Block', ...props }); hideContextMenu(); draw(); updateMarkdown(); };
         splitHBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const h = snapToGrid(activeContextMenuBlock.height/2); createAndAddBlock({ ...activeContextMenuBlock, y: activeContextMenuBlock.y+h, height:activeContextMenuBlock.height-h}); activeContextMenuBlock.height = h; });
         splitVBtn.addEventListener('click', () => { if(!activeContextMenuBlock) return; const w = snapToGrid(activeContextMenuBlock.width/2); createAndAddBlock({ ...activeContextMenuBlock, x: activeContextMenuBlock.x+w, width:activeContextMenuBlock.width-w}); activeContextMenuBlock.width = w; });
         deleteBtn.addEventListener('click', () => { const toDelete = new Set(selectedBlocks.size > 0 ? [...selectedBlocks] : (activeContextMenuBlock ? [activeContextMenuBlock] : [])); if (toDelete.size > 0) deleteBlocks(toDelete); hideContextMenu(); draw(); updateMarkdown(); });
@@ -1291,15 +1377,34 @@
             arrowStart = null;
             canvas.style.cursor = arrowMode ? 'crosshair' : 'default';
         });
-        const toggleGhostBtn = document.getElementById('toggle-ghost-spaces');
-        if (toggleGhostBtn) {
-            toggleGhostBtn.addEventListener('click', () => {
-                showGhostSpaces = !showGhostSpaces;
-                toggleGhostBtn.textContent = `Ghost spaces: ${showGhostSpaces ? 'On' : 'Off'}`;
-                toggleGhostBtn.className = showGhostSpaces ? 'btn primary' : 'btn ghost';
-                draw();
-            });
+    // Settings modal controls for ghost spaces and start-tag
+    const settingsModal = document.getElementById('settings-modal');
+    const openSettingsBtn = document.getElementById('open-settings');
+    const closeSettingsModalBtn = document.getElementById('close-settings-modal');
+    const settingsGhostCheckbox = document.getElementById('settings-ghost-spaces');
+    const settingsStartTagSelect = document.getElementById('settings-start-tag-select');
+
+        // Helper to apply settings modal-controlled settings to app state
+        function applySettings() {
+            // Ghost spaces
+            if (settingsGhostCheckbox) {
+                showGhostSpaces = !!settingsGhostCheckbox.checked;
+            }
+            // Start tag
+            if (settingsStartTagSelect) {
+                diagramStartTag = settingsStartTagSelect.value || 'block';
+                localStorage.setItem('diagramStartTag', diagramStartTag);
+            }
+            draw();
+            updateMarkdown();
         }
+
+        // Wire changes immediately when user toggles options in settings modal
+        if (settingsGhostCheckbox) settingsGhostCheckbox.addEventListener('change', applySettings);
+        if (settingsStartTagSelect) settingsStartTagSelect.addEventListener('change', applySettings);
+        // Open/close settings modal
+        if (openSettingsBtn) openSettingsBtn.addEventListener('click', () => { if (settingsModal) settingsModal.classList.remove('hidden'); if (settingsStartTagSelect) settingsStartTagSelect.value = diagramStartTag || 'block'; if (settingsGhostCheckbox) settingsGhostCheckbox.checked = !!showGhostSpaces; });
+        if (closeSettingsModalBtn) closeSettingsModalBtn.addEventListener('click', () => { applySettings(); if (settingsModal) settingsModal.classList.add('hidden'); });
         diagramTitleInput.addEventListener('input', updateMarkdown);
 
     // --- Persistence: save/load canvas state to localStorage ---
@@ -1312,13 +1417,13 @@
                 if ((!blocks || blocks.length === 0) && !diagramTitleInput.value.trim()) return;
                 // Create a JSON-safe snapshot of blocks and connections
                 const blocksSnapshot = blocks.map(b => {
-                    const { id, x, y, width, height, text, parentId, blockWidth, originalId, color } = b;
-                    return { id, x, y, width, height, text, parentId, blockWidth, originalId, color };
+                    const { id, x, y, width, height, text, label, parentId, blockWidth, originalId, color } = b;
+                    return { id, x, y, width, height, text: text || label, label: label || text, parentId, blockWidth, originalId, color };
                 });
                 const connectionsSnapshot = (connections || []).map(c => ({
                     _id: c._id || null,
-                    from: c.from,
-                    to: c.to,
+                    fromId: c.fromId,
+                    toId: c.toId,
                     label: c.label || '',
                     arrowType: c.arrowType || '-->'
                 }));
@@ -1355,7 +1460,7 @@
 
                     blocks = reconstructed;
                     // Restore connections and ensure each has a unique _id
-                    const loadedConnections = (parsed.connections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, from: c.from, to: c.to, label: c.label || '', arrowType: c.arrowType || '-->' }));
+                    const loadedConnections = (parsed.connections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, fromId: c.fromId || c.from, toId: c.toId || c.to, label: c.label || '', arrowType: c.arrowType || '-->' }));
                     connections = loadedConnections;
                     diagramTitleInput.value = parsed.title || '';
                     selectedBlocks.clear();
@@ -1381,6 +1486,16 @@
             if (loaded) console.log('Loaded saved canvas state from localStorage');
             // Enable autosave after initial load so we don't overwrite stored state
             autosaveEnabled = true;
+            // Initialize modal controls for ghost spaces and start-tag
+            try {
+                if (modalGhostCheckbox) modalGhostCheckbox.checked = !!showGhostSpaces;
+                if (modalStartTagSelect) modalStartTagSelect.value = diagramStartTag || 'block';
+                // Ensure load modal still closes properly
+                if (closeLoadModalBtn) closeLoadModalBtn.addEventListener('click', () => { loadModal.classList.add('hidden'); });
+                // Initialize settings modal controls
+                if (settingsGhostCheckbox) settingsGhostCheckbox.checked = !!showGhostSpaces;
+                if (settingsStartTagSelect) settingsStartTagSelect.value = diagramStartTag || 'block';
+            } catch (e) { /* ignore */ }
         });
 
         function updateMarkdown() {
@@ -1522,7 +1637,7 @@
          const cleanInput = input
           .split('\n')
           .filter(line => !line.trim().match(/^%%/) && !line.trim().match(/^title:/) && !line.trim().match(/^#\s*/) &&
-              !line.trim().match(/^block\s*$/) && !line.trim().match(/^columns\s+\d+\s*$/))
+              !line.trim().match(/^block(?:-beta)?\s*$/) && !line.trim().match(/^columns\s+\d+\s*$/))
           .join('\n');
             
             // Parse block definitions and connections with nesting support
@@ -1752,7 +1867,7 @@
                         // Ensure both blocks exist - don't advance grid for connection-implied blocks
                         createBlock(fromId, fromId, currentParent, false);
                         createBlock(toId, toId, currentParent, false);
-                        connections.push({ from: fromId, to: toId, label: label || '', arrowType: arrowType });
+                        connections.push({ fromId: fromId, toId: toId, label: label || '', arrowType: arrowType });
                         continue;
                     }
                     // fallthrough to token parsing if it wasn't a valid connection line
@@ -1923,10 +2038,12 @@
                         id: invisibleParentId,
                         text: '', // Empty text makes it invisible
                         parentId: null,
-                        x: Math.min(...column.blocks.map(b => b.x)),
-                        y: Math.min(...column.blocks.map(b => b.y)),
-                        width: Math.max(...column.blocks.map(b => b.x + b.width)) - Math.min(...column.blocks.map(b => b.x)),
-                        height: Math.max(...column.blocks.map(b => b.y + b.height)) - Math.min(...column.blocks.map(b => b.y)),
+                         // Position and size should encompass all column children so
+                         // downstream layout/column inference can still compute grid spans.
+                         x: Math.min(...column.blocks.map(b => b.x)),
+                         y: Math.min(...column.blocks.map(b => b.y)),
+                         width: Math.max(...column.blocks.map(b => b.x + b.width)) - Math.min(...column.blocks.map(b => b.x)),
+                         height: Math.max(...column.blocks.map(b => b.y + b.height)) - Math.min(...column.blocks.map(b => b.y)),
                         _isInvisibleParent: true
                     };
                     
@@ -1948,11 +2065,9 @@
         }
 
         function generateMermaidBlockDiagram(blockList) {
-            // Accept either a full block list or top-level blocks; normalize to a full list
+            // Normalize input to get all blocks (use global blocks if available)
             let allBlocks = [];
             if (Array.isArray(blockList)) {
-                // If caller passed only top-level blocks (no parentId set), prefer the global `blocks`
-                // which contains the full diagram so nested children are included.
                 const looksLikeTopLevelOnly = blockList.length > 0 && blockList.every(b => !b.parentId);
                 if (looksLikeTopLevelOnly && typeof blocks !== 'undefined' && Array.isArray(blocks) && blocks.length > 0) {
                     allBlocks = blocks.slice();
@@ -1960,306 +2075,294 @@
                     allBlocks = blockList.slice();
                 }
             }
-            
-            // Find top-level blocks (those with no parentId)
-            let topLevel = allBlocks.filter(b => !b.parentId);
 
-            // Detect vertical span layouts and create invisible parent blocks
-            topLevel = detectAndCreateVerticalSpans(topLevel);
-            
-            // Update allBlocks to include any new invisible parent blocks
-            const invisibleParents = topLevel.filter(b => b._isInvisibleParent);
-            allBlocks = [...allBlocks, ...invisibleParents];
-            
-            const byId = new Map(allBlocks.map(b => [b.id, b]));
-
-            // Infer unit pixel width for span inference when block.blockWidth is not set
-            // Use median block width so a single very wide or very narrow block doesn't skew the column inference
-            const pixelWidths = allBlocks.map(b => b.width || 0).filter(w => w > 0);
-            const unit = pixelWidths.length > 0 ? (function(){ const a = pixelWidths.slice().sort((x,y)=>x-y); const m = Math.floor(a.length/2); return (a.length % 2 === 1) ? a[m] : Math.round((a[m-1] + a[m]) / 2); })() : 100;
-
-            function spanFor(block) {
-                if (block.blockWidth && Number.isFinite(block.blockWidth)) return Math.max(1, block.blockWidth);
-                if (block.width && unit > 0) return Math.max(1, Math.round(block.width / unit));
-                return 1;
-            }
-
+            // Helper functions following DEVELOPMENT.md design
             function escapeLabel(s) {
                 if (!s && s !== '') return '';
                 return s.replace(/"/g, '\\"');
             }
 
-            function emitBlockRecursive(b, indent = '  ') {
-                const children = allBlocks.filter(x => x.parentId === b.id);
+            function getBlockLabel(block) {
+                // Support both text and label properties for backward compatibility
+                return block.label || block.text || '';
+            }
+
+            function isContainer(blockId) {
+                return allBlocks.some(b => b.parentId === blockId);
+            }
+
+            function getChildren(parentId) {
+                return allBlocks.filter(b => b.parentId === parentId);
+            }
+
+            function getConnectionsForLevel(parentId) {
+                const childrenIds = new Set(getChildren(parentId).map(b => b.id));
+                // Defensive check for test harness compatibility
+                if (typeof connections === 'undefined') return [];
+                return connections.filter(conn => 
+                    childrenIds.has(conn.fromId) && childrenIds.has(conn.toId)
+                );
+            }
+
+            // Recursive generator following DEVELOPMENT.md "Virtual Root" concept
+            function generateFor(parentId, indent = '  ', totalColumns = 1) {
+                const children = getChildren(parentId).sort((a, b) => {
+                    // Sort by y position first, then x position for consistent output
+                    if (Math.abs(a.y - b.y) > 20) return a.y - b.y;
+                    return a.x - b.x;
+                });
+
                 const lines = [];
-                if (children.length > 0) {
-                    // Start parent block (colors will be handled via classDef/class statements)
+
+                // For top-level blocks, generate with grid-based spacing
+                if (parentId === null && children.length > 0) {
+                    // Defensive check for test harness compatibility
+                    const currentGridSize = typeof gridSize !== 'undefined' ? gridSize : 100;
                     
-                    // For invisible parents, don't emit a label (empty text)
-                    const label = (b.text && !b._isInvisibleParent) ? `["${escapeLabel(b.text)}"]` : '';
+                    // Group children into rows
+                    const rows = [];
+                    const rowTolerance = currentGridSize / 2; // Half grid size tolerance
                     
-                    lines.push(`${indent}block:${b.id}${label}`);
                     for (const child of children) {
-                        lines.push(emitBlockRecursive(child, indent + '  '));
+                        let placed = false;
+                        for (const row of rows) {
+                            if (Math.abs(row.y - child.y) <= rowTolerance) {
+                                row.blocks.push(child);
+                                placed = true;
+                                break;
+                            }
+                        }
+                        if (!placed) {
+                            rows.push({ y: child.y, blocks: [child] });
+                        }
                     }
-                    lines.push(`${indent}end`);
+
+                    // Process each row with grid-based spacing
+                    for (const row of rows) {
+                        const rowBlocks = row.blocks.slice().sort((a, b) => a.x - b.x);
+                        const rowTokens = [];
+                        
+                        // Calculate grid positions
+                        const leftmostX = Math.min(...rowBlocks.map(b => b.x));
+                        
+                        // Find the absolute leftmost position across all rows to detect leading spaces
+                        const globalLeftmostX = Math.min(...rows.flatMap(r => r.blocks.map(b => b.x)));
+                        
+                        let currentGridCol = 0;
+                        
+                        // Check for leading spaces (spaces before the first block in this row)
+                        const firstBlockGridCol = Math.round((leftmostX - globalLeftmostX) / currentGridSize);
+                        // Compute leading spaces for this row — we'll use this both for
+                        // plain token rows and for rows that contain containers.
+                        const leadingSpaces = Math.max(0, firstBlockGridCol);
+                        const leadingSpaceToken = leadingSpaces === 1 ? 'space' : `space:${leadingSpaces}`;
+                        if (leadingSpaces > 0) {
+                            rowTokens.push(leadingSpaceToken);
+                            currentGridCol = leadingSpaces;
+                        }
+                        
+                        for (const child of rowBlocks) {
+                            // Convert pixel position to grid column (0-based from global left)
+                            const blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
+                            const blockGridSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                            
+                            // Add space tokens for gaps between blocks
+                            const gapSize = blockGridCol - currentGridCol;
+                            if (gapSize > 0) {
+                                const spaceToken = gapSize === 1 ? 'space' : `space:${gapSize}`;
+                                rowTokens.push(spaceToken);
+                            }
+                            
+                            // Add block token
+                            if (isContainer(child.id)) {
+                                const label = getBlockLabel(child);
+                                const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                                rowTokens.push(`block:${child.id}${labelText}`);
+                            } else {
+                                const label = getBlockLabel(child);
+                                const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                                const spanText = blockGridSpan > 1 ? `:${blockGridSpan}` : '';
+                                rowTokens.push(`${child.id}${spanText}${labelText}`);
+                            }
+                            
+                            currentGridCol = blockGridCol + blockGridSpan;
+                        }
+                        
+                        // Add trailing spaces to pad the row to full column count
+                        const remainingCols = totalColumns - currentGridCol;
+                        if (remainingCols > 0) {
+                            const trailingSpaceToken = remainingCols === 1 ? 'space' : `space:${remainingCols}`;
+                            rowTokens.push(trailingSpaceToken);
+                        }
+                        
+                        // Output the row as a single line if it has only simple blocks
+                        const hasContainers = rowBlocks.some(b => isContainer(b.id));
+                        if (!hasContainers && rowTokens.length > 0) {
+                            lines.push(`${indent}${rowTokens.join(' ')}`);
+                        } else {
+                            // Fall back to individual block handling for rows with containers.
+                            // However, preserve any leading space tokens by prefixing the
+                            // first emitted child line with the leadingSpaceToken.
+                            let usedLeading = false;
+                            for (const child of rowBlocks) {
+                                const label = getBlockLabel(child);
+                                const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                                const span = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
+
+                                // Build the base token (without indent)
+                                const baseToken = isContainer(child.id) ? `block:${child.id}${labelText}` : `${child.id}${span}${labelText}`;
+
+                                // Only insert a leading-space prefix when this row
+                                // contains a single block — this covers the common
+                                // 'single parent in its own row' case without
+                                // changing multi-block row semantics.
+                                if (!usedLeading && leadingSpaces > 0 && rowBlocks.length === 1) {
+                                     lines.push(`${indent}${leadingSpaceToken} ${baseToken}`);
+                                     usedLeading = true;
+                                 } else {
+                                     lines.push(`${indent}${baseToken}`);
+                                 }
+
+                                // If this child is a container, emit its nested content
+                                if (isContainer(child.id)) {
+                                    const childContent = generateFor(child.id, indent + '  ', totalColumns);
+                                    if (childContent) {
+                                        lines.push(childContent);
+                                    }
+                                    lines.push(`${indent}end`);
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    const span = spanFor(b);
-                    const label = b.text ? `["${escapeLabel(b.text)}"]` : '';
-                    // Colors will be handled via classDef/class statements
-                    lines.push(`${indent}${b.id}${span > 1 ? `:${span}` : ''}${label}`);
+                    // For nested blocks, use simpler generation without spaces
+                    for (const child of children) {
+                        if (isContainer(child.id)) {
+                            const label = getBlockLabel(child);
+                            const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                            lines.push(`${indent}block:${child.id}${labelText}`);
+                            
+                            const childContent = generateFor(child.id, indent + '  ', totalColumns);
+                            if (childContent) {
+                                lines.push(childContent);
+                            }
+                            
+                            lines.push(`${indent}end`);
+                        } else {
+                            const label = getBlockLabel(child);
+                            const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                            const span = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
+                            lines.push(`${indent}${child.id}${span}${labelText}`);
+                        }
+                    }
                 }
+
+                // Process connections at this level
+                const levelConnections = getConnectionsForLevel(parentId);
+                for (const conn of levelConnections) {
+                    const arrowType = conn.arrowType || '-->';
+                    const label = conn.label ? ` : "${escapeLabel(conn.label)}"` : '';
+                    lines.push(`${indent}${conn.fromId} ${arrowType} ${conn.toId}${label}`);
+                }
+
                 return lines.join('\n');
             }
 
-            // Build output
-            // If parsed blocks included a `columns N` directive, treat that as a
-            // minimum baseline for round-trip fidelity. However, if user layout
-            // changes (for example by inserting explicit space or moving blocks),
-            // allow the inferred column count to increase beyond the original so
-            // the emitted diagram reflects the visible spacing. We compute both
-            // the original (if any) and the inferred value and use the max.
-            let originalColumns = null;
-            if (topLevel.length > 0 && typeof topLevel[0]._diagramColumns === 'number') {
-                originalColumns = Math.max(...topLevel.map(b => b._diagramColumns || 0));
+            // Infer columns from layout using grid units
+            let topLevelBlocks = allBlocks.filter(b => !b.parentId);
+            // Apply vertical span detection so tall/stacked layouts get grouped
+            // into InvisibleParent containers when appropriate.
+            if (typeof detectAndCreateVerticalSpans === 'function') {
+                topLevelBlocks = detectAndCreateVerticalSpans(topLevelBlocks);
+                // If the detection produced synthetic invisible parents, add them
+                // to the full allBlocks collection so the recursive generator can
+                // find them and emit their nested children correctly.
+                for (const tl of topLevelBlocks) {
+                    if (!allBlocks.some(b => b.id === tl.id)) {
+                        allBlocks.push(tl);
+                    }
+                }
             }
-
-            let columns = null;
-
-            if (!originalColumns || originalColumns <= 0) {
-                const rowTolerance = 40; // px tolerance to group blocks into the same row
+            let columns = 1;
+            
+            // Defensive check for test harness compatibility
+            const currentGridSize = typeof gridSize !== 'undefined' ? gridSize : 100;
+            
+            if (topLevelBlocks.length > 0) {
+                // Group blocks by rows to infer column count
                 const rows = [];
-                for (const b of topLevel) {
+                const rowTolerance = currentGridSize / 2; // Half grid size tolerance
+                
+                for (const block of topLevelBlocks) {
                     let placed = false;
-                    for (const r of rows) {
-                        if (Math.abs(r.y - b.y) <= rowTolerance) {
-                            r.blocks.push(b);
+                    for (const row of rows) {
+                        if (Math.abs(row.y - block.y) <= rowTolerance) {
+                            row.blocks.push(block);
                             placed = true;
                             break;
                         }
                     }
-                    if (!placed) rows.push({ y: b.y, blocks: [b] });
-                }
-
-                let maxRowSpan = 1;
-                // DEBUG: show top-level items and how they are bucketed into rows
-                console.log('DEBUG: topLevel =>', topLevel.map(b => ({ id: b.id, x: b.x, y: b.y })));
-                console.log('DEBUG: initial rows =>', rows.map(r => ({ y: r.y, ids: r.blocks.map(b => b.id) })));
-                for (const r of rows) {
-                    let rowSum = 0;
-                    for (const b of r.blocks) rowSum += spanFor(b);
-                    maxRowSpan = Math.max(maxRowSpan, rowSum);
-                }
-
-                console.log('DEBUG: computed maxRowSpan =', maxRowSpan);
-                columns = Math.max(1, Math.round(maxRowSpan));
-
-                // Additionally infer required columns from the actual X positions
-                // so explicit visual gaps (ghost spaces on the canvas) are preserved
-                // in the textual output. We simulate placing blocks using pixel->col
-                // mapping and include gap columns between blocks when needed.
-                try {
-                    const globalMinX_est = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
-                    const columnPixelWidth_est = unit > 0 ? unit : 100;
-                    let neededColumnsFromGaps = 0;
-                    for (const r of rows) {
-                        const blocksInRow = r.blocks.slice().sort((a,b)=>a.x - b.x);
-                        let currentColSim = 0;
-                        for (const b of blocksInRow) {
-                            const approxCol = Math.max(0, Math.round((b.x - globalMinX_est) / columnPixelWidth_est));
-                            const gapCols = Math.max(0, approxCol - currentColSim);
-                            const span = spanFor(b);
-                            currentColSim += gapCols + Math.max(1, span);
-                        }
-                        neededColumnsFromGaps = Math.max(neededColumnsFromGaps, currentColSim);
+                    if (!placed) {
+                        rows.push({ y: block.y, blocks: [block] });
                     }
-                    // Use neededColumnsFromGaps as another inference source
-                    columns = Math.max(columns, Math.max(1, Math.round(neededColumnsFromGaps)));
-                    console.log('DEBUG: inferred columns from gaps =', neededColumnsFromGaps, '-> using columns =', columns);
-                } catch (e) {
-                    // Non-fatal; continue with previous columns
                 }
-            }
 
-            // Ensure we honor the original parsed `columns N` as a minimum baseline
-            if (originalColumns && originalColumns > 0) {
-                columns = Math.max(columns || 1, originalColumns);
-            }
-
-            let out = ['block', `columns ${columns}`];
-            // Emit top-level blocks. Prefer to emit rows as inline token lines (so we can emit 'space' tokens)
-            // when a row contains only leaf blocks (no children). If a row contains parent blocks,
-            // fall back to the recursive emitter which handles nested 'block:ID ... end' sections.
-            const rows = [];
-            const rowTolerance = 40; // px tolerance to group blocks into the same row
-            for (const b of topLevel) {
-                let placed = false;
-                for (const r of rows) {
-                    if (Math.abs(r.y - b.y) <= rowTolerance) { r.blocks.push(b); placed = true; break; }
-                }
-                if (!placed) rows.push({ y: b.y, blocks: [b] });
-            }
-
-            // Infer required columns from actual pixel gaps between blocks so visible
-            // ghost spaces on the canvas are preserved in emitted textual output.
-            try {
-                const globalMinX_emit = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
-                const columnPixelWidth_emit = unit > 0 ? unit : 100;
-                let neededColumnsFromGapsEmit = 0;
-                for (const r of rows) {
-                    const blocksInRow = r.blocks.slice().sort((a,b)=>a.x - b.x);
-                    let currentColSim = 0;
-                    for (const b of blocksInRow) {
-                        const approxCol = Math.max(0, Math.round((b.x - globalMinX_emit) / columnPixelWidth_emit));
-                        const gapCols = Math.max(0, approxCol - currentColSim);
-                        const span = spanFor(b);
-                        currentColSim += gapCols + Math.max(1, span);
+                // Calculate max columns needed based on grid positions
+                let maxColumns = 1;
+                const globalLeftmostX = Math.min(...topLevelBlocks.map(b => b.x));
+                
+                for (const row of rows) {
+                    const rowBlocks = row.blocks.slice().sort((a, b) => a.x - b.x);
+                    if (rowBlocks.length === 0) continue;
+                    
+                    let rightmostCol = 0;
+                    
+                    for (const block of rowBlocks) {
+                        const blockGridCol = Math.round((block.x - globalLeftmostX) / currentGridSize);
+                        const blockGridSpan = Math.max(1, Math.round(block.width / currentGridSize));
+                        const blockRightCol = blockGridCol + blockGridSpan;
+                        rightmostCol = Math.max(rightmostCol, blockRightCol);
                     }
-                    neededColumnsFromGapsEmit = Math.max(neededColumnsFromGapsEmit, currentColSim);
+                    
+                    maxColumns = Math.max(maxColumns, rightmostCol);
                 }
-                columns = Math.max(columns || 1, Math.max(1, Math.round(neededColumnsFromGapsEmit)));
+                
+                columns = maxColumns;
                 console.log('DEBUG: columns after gap-inference =', columns);
-                // Ensure the output header reflects the possibly-updated columns
-                out[1] = `columns ${columns}`;
-            } catch (e) { /* ignore */ }
-
-            // Helper to emit a token for a single block (leaf or parent token)
-            function tokenForBlock(b) {
-                if (!b) return '';
-                if (allBlocks.some(x => x.parentId === b.id)) {
-                    // Parent token (emit as block:ID label) - children will be emitted inline via recursive emitter
-                    const label = (b.text && !b._isInvisibleParent) ? `["${escapeLabel(b.text)}"]` : '';
-                    return `block:${b.id}${label}`;
-                } else {
-                    const span = spanFor(b);
-                    const label = b.text ? `["${escapeLabel(b.text)}"]` : '';
-                    return `${b.id}${span > 1 ? `:${span}` : ''}${label}`;
-                }
             }
 
-            // Overall left-most x used for gap calculations (pixel coordinate)
-            const globalMinX = topLevel.length > 0 ? Math.min(...topLevel.map(b => b.x)) : 0;
-            const columnPixelWidth = unit > 0 ? unit : 100; // pixel width corresponding to one column
-
-            for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-                const r = rows[rowIdx];
-                const blocksInRow = r.blocks.slice().sort((a,b)=>a.x - b.x);
-                const rowHasParents = blocksInRow.some(b => allBlocks.some(x => x.parentId === b.id));
-                if (!rowHasParents) {
-                    // Build an inline token line with 'space' tokens for gaps using column indices
-                    const tokens = [];
-                    let currentColIndex = 0;
-
-                    for (const b of blocksInRow) {
-                        // Map the block's x position to an approximate column index
-                        // Map block x -> column index using floor-based mapping with a small bias
-                        // Map block x -> column index using rounding (more stable than biased floor)
-                        // Map block x -> column index using rounding and clamp to last column
-                        let approxCol = Math.max(0, Math.round((b.x - globalMinX) / columnPixelWidth));
-                        if (typeof columnsLocal === 'number' && columnsLocal > 0) approxCol = Math.min(columnsLocal - 1, approxCol);
-                        let gapCols = Math.max(0, approxCol - currentColIndex);
-                        // Clamp gapCols so we don't exceed total columns
-                        if (currentColIndex + gapCols > columns) gapCols = Math.max(0, columns - currentColIndex);
-
-                        // Reserve room for the block so emitting a preceding 'space' doesn't
-                        // push the row over the column limit when we later emit the block.
-                        // Compute desired span for this block and limit gapCols so that
-                        // currentColIndex + gapCols + desiredSpan <= columns (best-effort).
-                        const desiredSpan = spanFor(b);
-                        const maxAllowGap = Math.max(0, columns - currentColIndex - Math.min(desiredSpan, columns));
-                        if (gapCols > maxAllowGap) gapCols = maxAllowGap;
-
-                        if (gapCols > 0) {
-                            const spaces = Math.max(1, gapCols);
-                            tokens.push(`space${spaces>1?`:${spaces}`:''}`);
-                            currentColIndex += spaces;
-                        }
-
-                        // Emit the block token with its span, but clamp span to remaining columns
-                        const remaining = Math.max(0, columns - currentColIndex);
-                        let span;
-                        if (remaining <= 0) {
-                            // No explicit remaining columns, but prefer emitting visible blocks.
-                            // Place the block in the last column with span=1 (best-effort).
-                            span = 1;
-                            // If columns is defined, set currentColIndex to columns - 1 to reflect placement
-                            if (typeof columns === 'number' && columns > 0) currentColIndex = Math.max(0, columns - 1);
-                        } else {
-                            span = Math.min(spanFor(b), remaining);
-                        }
-                        // Build token; tokenForBlock would include original span, but we need to ensure
-                        // the emitted token uses the possibly-clamped span. Reconstruct token here.
-                        if (allBlocks.some(x => x.parentId === b.id)) {
-                            const label = (b.text && !b._isInvisibleParent) ? `["${escapeLabel(b.text)}"]` : '';
-                            tokens.push(`block:${b.id}${label}`);
-                        } else {
-                            const label = b.text ? `["${escapeLabel(b.text)}"]` : '';
-                            tokens.push(`${b.id}${span>1?`:${span}`:''}${label}`);
-                        }
-                        currentColIndex += span;
-                        // If we've filled the row, stop emitting further tokens for this row
-                        if (currentColIndex >= columns) break;
-                    }
-
-                    // Pad non-final rows so the sum of token spans equals the total columns
-                    const isLastRow = (rowIdx === rows.length - 1);
-                    if (!isLastRow && currentColIndex < columns) {
-                        const remaining = columns - currentColIndex;
-                        tokens.push(`space${remaining>1?`:${remaining}`:''}`);
-                        currentColIndex += remaining;
-                    }
-
-                    out.push('  ' + tokens.join(' '));
-                } else {
-                    // Fallback: emit each top-level block recursively in order
-                    for (const b of blocksInRow) out.push(emitBlockRecursive(b));
-                }
+            // Build output using recursive generator
+            const startTag = (typeof diagramStartTag !== 'undefined' ? diagramStartTag : 'block');
+            let output = [startTag, `columns ${columns}`];
+            
+            // Generate content starting from virtual root (parentId = null)
+            const content = generateFor(null, '  ', columns);
+            if (content) {
+                output.push(content);
             }
-            
-            // Add connections/arrows
-            if (typeof connections !== 'undefined' && connections.length > 0) {
-                out.push(''); // Empty line before connections
-                connections.forEach(conn => {
-                    const arrowType = conn.arrowType || '-->';
-                    if (conn.label && conn.label.trim()) {
-                        out.push(`  ${conn.from} -- "${conn.label}" ${arrowType} ${conn.to}`);
-                    } else {
-                        out.push(`  ${conn.from} ${arrowType} ${conn.to}`);
-                    }
-                });
-            }
-            
-            // Add classDef and class statements for colors
-            const colorMap = new Map();
-            let colorCounter = 1;
-            
-            // Collect all blocks with colors
+
+            // Add color styling if blocks have colors
             const coloredBlocks = allBlocks.filter(b => b.color);
-            
             if (coloredBlocks.length > 0) {
-                out.push(''); // Empty line before styling
+                output.push('');
                 
-                // Generate classDef statements for unique colors
-                coloredBlocks.forEach(block => {
-                    const color = block.color.startsWith('#') ? block.color : '#' + block.color;
-                    if (!colorMap.has(color)) {
-                        const className = `color${colorCounter++}`;
-                        colorMap.set(color, className);
-                        out.push(`  classDef ${className} fill:${color},stroke:#333,stroke-width:2px;`);
-                    }
+                // Create unique color classes
+                const uniqueColors = [...new Set(coloredBlocks.map(b => b.color))];
+                uniqueColors.forEach((color, idx) => {
+                    const className = `color${idx + 1}`;
+                    output.push(`  classDef ${className} fill:${color},stroke:#333,stroke-width:2px;`);
                 });
-                
-                // Generate class statements to assign blocks to color classes
-                coloredBlocks.forEach(block => {
-                    const color = block.color.startsWith('#') ? block.color : '#' + block.color;
-                    const className = colorMap.get(color);
-                    if (className) {
-                        out.push(`  class ${block.id} ${className}`);
-                    }
+
+                // Apply color classes to blocks
+                uniqueColors.forEach((color, idx) => {
+                    const className = `color${idx + 1}`;
+                    const blocksWithColor = coloredBlocks.filter(b => b.color === color);
+                    const blockIds = blocksWithColor.map(b => b.id).join(' ');
+                    output.push(`  class ${blockIds} ${className}`);
                 });
             }
-            
-            return out.join('\n') + '\n';
+
+            return output.join('\n');
         }
 
         loadConfirmBtn.addEventListener('click', () => {
@@ -2283,7 +2386,7 @@
 
                 diagramTitleInput.value = title;
                 blocks = newBlocks;
-                connections = (newConnections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, from: c.from, to: c.to, label: c.label || '' }));
+                connections = (newConnections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, fromId: c.fromId || c.from, toId: c.toId || c.to, label: c.label || '' }));
                 selectedBlocks.clear();
                 draw();
                 updateMarkdown();
