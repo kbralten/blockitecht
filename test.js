@@ -290,6 +290,8 @@ testCases.forEach((testCase, index) => {
                 id: 'PROGRAMMATIC_PARENT',
                 text: 'Programmatic Parent',
                 x: 100, y: 100, width: 200, height: 80,
+                // Reflect new semantics: parent spans 2 columns, so set logical blockWidth
+                blockWidth: 2,
                 parentId: null,
                 originalId: 'PROGRAMMATIC_PARENT'
             };
@@ -490,29 +492,34 @@ testCases.forEach((testCase, index) => {
 });
 
 console.log('🏁 Round-trip tests completed!');
+// After the built-in round-trip tests, run any extra tests in the `tests/` folder.
+// This makes it easy to add small regression tests without modifying this harness.
+try {
+    const extraTestsDir = './tests';
+    if (fs.existsSync(extraTestsDir)) {
+        const files = fs.readdirSync(extraTestsDir).filter(f => f.endsWith('.js') && f !== 'parseHarness.js');
+        files.forEach(file => {
+            try {
+                console.log(`\n--- Running extra test: ${file} ---`);
+                const fullPath = `${extraTestsDir}/${file}`;
+                const res = require(fullPath);
+                // If the test module didn't exit itself, assume success
+            } catch (err) {
+                console.error(`Extra test ${file} failed:`, err);
+                failures += 1;
+            }
+        });
+    }
+} catch (e) {
+    console.error('Failed to run extra tests:', e);
+    failures += 1;
+}
 
-// Exit non-zero on failures to be CI friendly
+console.log('\nFinal test result: failures =', failures);
 if (failures > 0) {
     console.log(`\nTests completed with ${failures} failure(s). Exiting with code 1.`);
     process.exit(1);
 } else {
-    console.log('\nAll tests passed. Exiting with code 0.');
+    console.log('\nAll tests passed including extra tests. Exiting with code 0.');
     process.exit(0);
-}
-
-// --- Diagnostic: parse user-provided failing diagram ---
-// This code runs only when test.js is executed directly; it's useful during
-// local debugging. It will print parsed blocks for the supplied input.
-if (require.main === module) {
-    const failing = `block
-columns 14
-  29e35826-2d60-40d1-897b-db8ebc2f4131:6["New Block"]
-  00703699-c23b-49b1-a27b-336c2cd13fd9:6["New Block"]
-  66056953-de6f-4bc7-8038-ecd3574937ba:14["New Block"]
-  0218f681-d166-49d7-9ef7-2e3f632e66c9["New Block"]`;
-
-    console.log('\n--- Diagnostic parse of failing diagram ---');
-    const { title, blocks: parsed } = parseBlockDiagramInput(failing);
-    console.log('Parsed blocks count:', parsed.length);
-    parsed.forEach((b, i) => console.log(`  [${i}] id=${b.id} text='${b.text}' x=${b.x} y=${b.y} width=${b.width} blockWidth=${b.blockWidth}`));
 }

@@ -31,7 +31,7 @@ function extractFunction(htmlContent, functionName) {
 }
 
 // Read the HTML file and extract functions
-const htmlPath = path.join(__dirname, 'index.html');
+const htmlPath = path.join(__dirname, '..', 'index.html');
 const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
 const parseText = extractFunction(htmlContent, 'parseBlockDiagramInput');
@@ -139,7 +139,7 @@ testCases.forEach((testCase, index) => {
         }
         
         const conn = connections[0];
-        console.log(`Connection: ${conn.from} ${conn.arrowType || '-->'} ${conn.to}`);
+        console.log(`Connection: ${conn.fromId} ${conn.arrowType || '-->'} ${conn.toId}`);
         if (conn.label) console.log(`Label: "${conn.label}"`);
         
         // Check arrow type
@@ -150,14 +150,14 @@ testCases.forEach((testCase, index) => {
         }
         
         // Check from/to for backward arrows
-        if (testCase.expectedFrom && conn.from !== testCase.expectedFrom) {
-            console.log(`❌ Expected from "${testCase.expectedFrom}", got "${conn.from}"`);
+        if (testCase.expectedFrom && conn.fromId !== testCase.expectedFrom) {
+            console.log(`❌ Expected from "${testCase.expectedFrom}", got "${conn.fromId}"`);
             allTestsPassed = false;
             return;
         }
         
-        if (testCase.expectedTo && conn.to !== testCase.expectedTo) {
-            console.log(`❌ Expected to "${testCase.expectedTo}", got "${conn.to}"`);
+        if (testCase.expectedTo && conn.toId !== testCase.expectedTo) {
+            console.log(`❌ Expected to "${testCase.expectedTo}", got "${conn.toId}"`);
             allTestsPassed = false;
             return;
         }
@@ -189,12 +189,12 @@ testCases.forEach((testCase, index) => {
         
         const reparsedConn = reparsedConnections[0];
         if (reparsedConn.arrowType !== conn.arrowType || 
-            reparsedConn.from !== conn.from || 
-            reparsedConn.to !== conn.to ||
+            reparsedConn.fromId !== conn.fromId || 
+            reparsedConn.toId !== conn.toId ||
             reparsedConn.label !== conn.label) {
             console.log('❌ Round-trip failed: connection properties changed');
-            console.log(`  Original: ${conn.from} ${conn.arrowType} ${conn.to} (${conn.label})`);
-            console.log(`  Reparsed: ${reparsedConn.from} ${reparsedConn.arrowType} ${reparsedConn.to} (${reparsedConn.label})`);
+            console.log(`  Original: ${conn.fromId} ${conn.arrowType} ${conn.toId} (${conn.label})`);
+            console.log(`  Reparsed: ${reparsedConn.fromId} ${reparsedConn.arrowType} ${reparsedConn.toId} (${reparsedConn.label})`);
             allTestsPassed = false;
             return;
         }

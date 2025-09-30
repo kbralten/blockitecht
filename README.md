@@ -108,3 +108,19 @@ Contributing
 This is an open-source project and we welcome contributions! Please feel free to open an issue to report bugs, suggest features, or submit a pull request.
 
 Made with ❤️ for developers and architects.
+
+Quick Start
+-----------
+
+Run locally without any build steps:
+
+1. Start a simple HTTP server from the project folder (required; don't use file://):
+    - macOS/Linux: python3 -m http.server 8000
+    - Windows (with Python): python -m http.server 8000
+2. Open in your browser:
+    - http://localhost:8000/index.html
+
+Tips:
+- Always use the HTTP server so loading/saving and preview features work correctly.
+- Use the Canvas/Mermaid tabs to switch between editing and preview.
+- Click the "🧪 Run Tests" button in the app or run node test.js in a terminal after parser changes.

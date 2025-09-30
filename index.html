@@ -42,13 +42,14 @@
         .btn.purple{background:var(--purple)}
         .btn:disabled{opacity:0.6;cursor:not-allowed}
 
-        main.app-main{display:flex;flex:1;padding:16px;gap:16px;overflow:hidden}
+    main.app-main{display:flex;flex:1;padding:16px;gap:16px;overflow:hidden}
+    .mermaid-panel-standalone{display:none;margin:16px}
         .panel{background:var(--panel-bg);border-radius:12px;box-shadow:0 6px 18px rgba(15,23,42,0.06);display:flex;flex-direction:column;overflow:hidden}
         .panel .panel-header{padding:8px 12px;border-bottom:1px solid #e5e7eb}
         .panel .panel-body{padding:8px;flex:1;overflow:auto}
 
-        .canvas-panel{flex:1;display:flex;flex-direction:column}
-        #canvas-container{position:relative;flex:1;overflow:auto}
+    .canvas-panel{flex:1;display:flex;flex-direction:column;min-height:0}
+    #canvas-container{position:relative;flex:1;overflow:auto;min-height:0}
         canvas#canvas{position:absolute;top:0;left:0}
         textarea#text-editor{position:absolute;z-index:10;display:none}
 
@@ -261,6 +262,27 @@
     .modal-settings-note { font-size:0.9rem; color:var(--muted); }
 
     </style>
+    <style>
+    /* Tabs */
+    #tab-bar{display:flex;gap:12px;align-items:center;padding:8px 16px;margin-bottom:8px}
+        #tab-bar .tab-btn{padding:6px 10px;border-radius:6px}
+        #tab-bar .tab-btn.active{background:var(--primary);color:#fff}
+        /* Mermaid preview */
+        #mermaid-preview-wrapper{margin-top:12px;border-top:1px solid #e5e7eb;padding-top:12px}
+        #mermaid-preview-wrapper h3{margin:0 0 8px 0;font-size:0.95rem;font-weight:600}
+        #mermaid-preview{min-height:220px;border:1px dashed #e5e7eb;padding:8px;border-radius:8px;background:#fbfdff;overflow:auto}
+    /* Split layout for mermaid code and preview */
+    #mermaid-section{display:flex;gap:12px;flex:1;min-height:0}
+    #mermaid-code{flex:1;min-width:260px;display:flex;flex-direction:column;min-height:0}
+    #mermaid-preview-wrapper{flex:1;display:flex;flex-direction:column;min-height:0}
+    #markdown-output{width:100%;flex:1;min-height:0;padding:8px;border:0;border-radius:6px;background:#f8fafc;font-family:monospace;font-size:0.85rem}
+    #mermaid-preview{flex:1;min-height:0}
+    /* Standalone Mermaid panel fills available space when visible */
+    .mermaid-panel-standalone{display:none;margin:0 16px 16px;flex:1}
+    .mermaid-panel-standalone .panel-body{display:flex;flex-direction:column;min-height:0}
+    </style>
+    <!-- Mermaid (for preview only) -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
     <div class="app-root" id="app">
@@ -286,7 +308,14 @@
             </div>
         </header>
 
+        <!-- Top tabs (Canvas / Mermaid) -->
+        <div id="tab-bar">
+            <button id="tab-canvas" class="btn ghost tab-btn">Canvas</button>
+            <button id="tab-mermaid" class="btn ghost tab-btn">Mermaid</button>
+        </div>
+
         <main class="app-main">
+        
             <!-- Canvas Area -->
             <div class="panel canvas-panel">
                 <div class="panel-header">
@@ -299,15 +328,23 @@
                     <div id="color-hud" class="color-hud hidden" aria-hidden="true"></div>
                 </div>
             </div>
+        </main>
 
-            <!-- Mermaid Block Diagram Output -->
-            <div class="panel md-panel">
-                 <div class="panel-header"><h2 class="panel-title">Mermaid Block Diagram</h2></div>
-                <div class="panel-body">
-                    <textarea id="markdown-output" readonly title="Generated Mermaid block diagram code"></textarea>
+        <!-- Mermaid Panel (shown only when Mermaid tab is active) -->
+        <div id="mermaid-panel" class="panel mermaid-panel-standalone">
+            <div class="panel-header"><h2 class="panel-title">Mermaid Block Diagram</h2></div>
+            <div class="panel-body">
+                <div id="mermaid-section">
+                    <div id="mermaid-code">
+                        <textarea id="markdown-output" readonly title="Generated Mermaid block diagram code"></textarea>
+                    </div>
+                    <div id="mermaid-preview-wrapper">
+                        <h3>Mermaid Preview</h3>
+                        <div id="mermaid-preview"></div>
+                    </div>
                 </div>
             </div>
-        </main>
+        </div>
     </div>
 
     <!-- Context Menu -->
@@ -408,24 +445,237 @@
         const loadError = document.getElementById('load-error');
 
         // --- STATE VARIABLES ---
-        const gridSize = 100;
-        let blocks = [];
+    const gridSize = 100; // Base grid unit in pixels (column width and minimum row height)
+        let blocks = []; // Blocks now use logical row/col coordinates
         let connections = []; // Array to store arrow connections {fromId: blockId, toId: blockId, label?: string}
-    // Disable autosave during initialization to avoid overwriting existing storage with empty state
-    let autosaveEnabled = false;
+        // Disable autosave during initialization to avoid overwriting existing storage with empty state
+        let autosaveEnabled = false;
         let selectedBlocks = new Set();
         let currentBlock = null, editingBlock = null, activeContextMenuBlock = null;
         let drawing = false, dragging = false, resizing = false;
-    let arrowMode = false, arrowStart = null; // Arrow creation mode
-    let selectedConnections = new Set(); // Set of connection _id strings
-    let connectionCounter = 1; // internal connection id counter
-    let activeContextMenuConnection = null; // connection object for context menu actions
-    let showGhostSpaces = true; // toggle for visualizing space tokens
-    // Which start tag to emit at the top of generated mermaid ('block' or 'block-beta')
-    let diagramStartTag = localStorage.getItem('diagramStartTag') || 'block';
-    const startTagSelect = document.getElementById('start-tag-select');
-        let startX, startY, dragOffsetX, dragOffsetY, resizeHandle;
+        let arrowMode = false, arrowStart = null; // Arrow creation mode
+        let selectedConnections = new Set(); // Set of connection _id strings
+        let connectionCounter = 1; // internal connection id counter
+        let activeContextMenuConnection = null; // connection object for context menu actions
+        let showGhostSpaces = true; // toggle for visualizing space tokens
+        // Which start tag to emit at the top of generated mermaid ('block' or 'block-beta')
+        let diagramStartTag = localStorage.getItem('diagramStartTag') || 'block';
+        const startTagSelect = document.getElementById('start-tag-select');
+        let startRow, startCol, dragOffsetRow, dragOffsetCol, resizeHandle;
         let dragStartStates = new Map();
+        
+        // --- LOGICAL GRID SYSTEM ---
+        // All blocks are positioned on a logical grid using row/col coordinates
+        // The display layer converts these to pixel positions for rendering
+        
+        // --- VISUAL ROW HEIGHT MODEL ---
+        // Row height is visual-only. Logically, every block is one row high.
+        // topRowHeights stores per-row height in grid units (>=1). Keyed by top-level row index.
+        const topRowHeights = new Map(); // rowIndex -> units (int)
+        const getTopLevelRowUnits = (row) => Math.max(1, topRowHeights.get(row) || 1);
+        const setTopLevelRowUnits = (row, units) => topRowHeights.set(Math.max(0, row|0), Math.max(1, Math.round(units)));
+
+        // Compute cumulative Y (in pixels) to the start of row (exclusive)
+        function getTopLevelRowStartY(row) {
+            const maxRow = Math.max(row, ...blocks.filter(b => !b.parentId).map(b => b.row || 0), 0);
+            let y = 0;
+            for (let r = 0; r < Math.min(row, maxRow + 2); r++) y += getTopLevelRowUnits(r) * gridSize;
+            return y;
+        }
+        function getTopLevelRowHeightPx(row) { return getTopLevelRowUnits(row) * gridSize; }
+
+        // Recompute visual heights for all top-level rows so that:
+        // - Minimum row height is 100px (1 grid unit)
+        // - Every leaf block's VISIBLE height (after padding) is >= 50px, even when stacked
+        function recomputeTopRowHeights() {
+            const topLevel = blocks.filter(b => !b.parentId);
+            if (topLevel.length === 0) return;
+            const rows = [...new Set(topLevel.map(b => b.row || 0))];
+            const minVisibleLeafPx = 50; // strict minimum for leaf block interior
+            const basePadding = 10; // must match getVisualPadding’s base padding
+
+            // How many vertical segments a parent divides into (ignoring columns)
+            function childRowsCount(parentId) {
+                const kids = blocks.filter(x => x.parentId === parentId);
+                if (kids.length === 0) return 1;
+                const rset = [...new Set(kids.map(k => k.row))];
+                const cset = [...new Set(kids.map(k => k.col))];
+                if (rset.length > 1) return rset.length;     // stacked by distinct rows
+                if (cset.length > 1) return 1;               // side-by-side columns, no vertical stacking
+                return kids.length;                           // single row, single column → stack by order
+            }
+
+            // Required row height (in px) to satisfy minVisibleLeafPx for any leaf in this subtree
+            // depth: visual depth of the current node (top-level = 0)
+            function requiredRowHeightForNode(node, depth) {
+                const kids = blocks.filter(x => x.parentId === node.id);
+                if (kids.length === 0) {
+                    const padding = basePadding * (1 + depth);
+                    return minVisibleLeafPx + 2 * padding;
+                }
+                const segments = childRowsCount(node.id);
+                let required = 0;
+                for (const k of kids) {
+                    // Each vertical segmentation divides parent height; multiply child requirement by segment count
+                    required = Math.max(required, segments * requiredRowHeightForNode(k, depth + 1));
+                }
+                return required;
+            }
+
+            rows.forEach(rowIdx => {
+                let rowHeightPx = gridSize; // start at 1 grid unit
+
+                // Gather top-level blocks that live in this row
+                const topBlocks = topLevel.filter(t => t.row === rowIdx);
+                if (topBlocks.length > 0) {
+                    let needed = 0;
+                    for (const tb of topBlocks) {
+                        // Top-level depth is 0
+                        needed = Math.max(needed, requiredRowHeightForNode(tb, 0));
+                    }
+                    // Enforce minimum 1 grid unit
+                    rowHeightPx = Math.max(gridSize, Math.ceil(needed));
+                }
+
+                setTopLevelRowUnits(rowIdx, Math.max(1, Math.round(rowHeightPx / gridSize)));
+            });
+        }
+
+        // Convert pixel coordinates to logical grid coordinates
+        function pixelToGrid(pixelX, pixelY) {
+            // Column mapping remains uniform
+            const col = Math.round(pixelX / gridSize);
+            // Row mapping uses variable top-level row heights
+            // Find the row whose cumulative height band contains pixelY
+            const maxRow = Math.max(...blocks.filter(b => !b.parentId).map(b => b.row || 0), 0);
+            let acc = 0, row = 0;
+            for (let r = 0; r <= maxRow + 100; r++) { // safety upper bound
+                const h = getTopLevelRowUnits(r) * gridSize;
+                if (pixelY < acc + h) { row = r; break; }
+                acc += h; row = r + 1;
+            }
+            return { col, row };
+        }
+        
+        // Convert logical grid coordinates to pixel coordinates
+        function gridToPixel(row, col) {
+            return {
+                x: col * gridSize,
+                y: getTopLevelRowStartY(row)
+            };
+        }
+        
+        // Compute pixel bounds respecting visual row height model
+        function computeBlockPixelBounds(block) {
+            const pixelX = block.col * gridSize;
+            const pixelWidth = (block.colSpan || 1) * gridSize;
+
+            function getAncestorChain(b) {
+                const chain = [];
+                let cur = b;
+                while (cur && cur.parentId) { cur = blocks.find(x => x.id === cur.parentId); if (cur) chain.push(cur); }
+                return chain.reverse(); // root-most first
+            }
+            // Determine Y/height by walking up parents dividing space among child rows
+            if (!block.parentId) {
+                const pixelY = getTopLevelRowStartY(block.row);
+                const pixelHeight = getTopLevelRowHeightPx(block.row);
+                return { pixelX, pixelY, pixelWidth, pixelHeight };
+            } else {
+                const ancestors = getAncestorChain(block);
+                // Start from the top-most ancestor's top-level row band
+                const top = ancestors.length > 0 ? ancestors[0] : null;
+                const topRow = top ? top.row : block.row;
+                let containerY = getTopLevelRowStartY(topRow);
+                let containerH = getTopLevelRowHeightPx(topRow);
+
+                // Refine container region down the ancestor chain
+                for (let level = 0; level < ancestors.length; level++) {
+                    const parent = ancestors[level];
+                    const childNode = (level + 1 < ancestors.length) ? ancestors[level + 1] : block;
+                    const children = blocks.filter(b => b.parentId === parent.id);
+                    // Determine vertical segmentation inside this parent
+                    const rows = [...new Set(children.map(c => c.row))].sort((a, b) => a - b);
+                    const cols = [...new Set(children.map(c => c.col))].sort((a, b) => a - b);
+                    let internalRows = rows.length;
+                    let segmentIdx;
+
+                    if (internalRows <= 1) {
+                        const multipleColumns = cols.length > 1; // side-by-side layout, not vertical stack
+                        if (multipleColumns) {
+                            // Single logical row with multiple columns: use full parent height
+                            internalRows = 1;
+                            segmentIdx = 0;
+                        } else {
+                            // Single logical row and single column: stack by order
+                            internalRows = Math.max(1, children.length);
+                            segmentIdx = Math.max(0, children.findIndex(c => c.id === childNode.id));
+                        }
+                    } else {
+                        // Use the child's row index among distinct rows
+                        segmentIdx = Math.max(0, rows.indexOf(childNode.row));
+                    }
+
+                    const segHeight = containerH / Math.max(1, internalRows);
+                    containerY = containerY + segmentIdx * segHeight;
+                    containerH = segHeight;
+                }
+
+                return { pixelX, pixelY: containerY, pixelWidth, pixelHeight: containerH };
+            }
+        }
+
+        // Get the visual bounds of a block (used for rendering and hit testing)
+        function getBlockVisualBounds(block) {
+            const { pixelX, pixelY, pixelWidth, pixelHeight } = computeBlockPixelBounds(block);
+            const padding = getVisualPadding(block);
+            return {
+                x: pixelX + padding,
+                y: pixelY + padding,
+                width: pixelWidth - (2 * padding),
+                height: pixelHeight - (2 * padding),
+                pixelX,
+                pixelY,
+                pixelWidth,
+                pixelHeight
+            };
+        }
+        
+        // Find an empty grid position for a new block
+        function findEmptyGridPosition(colSpan = 1, rowSpan = 1, startFromRow = 0) {
+            const maxCols = 20; // Reasonable grid limit
+            
+            for (let row = startFromRow; row < 50; row++) {
+                for (let col = 0; col <= maxCols - colSpan; col++) {
+                    if (isGridPositionFree(row, col, rowSpan, colSpan)) {
+                        return { row, col };
+                    }
+                }
+            }
+            // Fallback to end of grid
+            return { row: startFromRow + Math.max(1, blocks.length), col: 0 };
+        }
+        
+        // Check if a grid position is free (no overlapping blocks)
+        function isGridPositionFree(row, col, rowSpan = 1, colSpan = 1, ignoreBlock = null) {
+            for (const block of blocks) {
+                if (block === ignoreBlock) continue;
+                
+                // Check for overlap between two rectangles
+                const blockEndRow = block.row + block.rowSpan;
+                const blockEndCol = block.col + block.colSpan;
+                const testEndRow = row + rowSpan;
+                const testEndCol = col + colSpan;
+                
+                const overlaps = (
+                    row < blockEndRow && testEndRow > block.row &&
+                    col < blockEndCol && testEndCol > block.col
+                );
+                
+                if (overlaps) return false;
+            }
+            return true;
+        }
 
         // AI features removed
 
@@ -527,18 +777,15 @@
         
         function getVisualPadding(block) {
             const depth = getDepth(block);
-            const basePadding = 5; // 5px padding for top-level blocks
+            const basePadding = 10; // 10px padding for top-level blocks
             return basePadding + (depth * basePadding);
         }
 
         const getTopBlockAtPos = (pos) => {
             const clickedBlocks = blocks.filter(b => {
-                const padding = getVisualPadding(b);
-                const visualX = b.x + padding;
-                const visualY = b.y + padding;
-                const visualWidth = b.width - (2 * padding);
-                const visualHeight = b.height - (2 * padding);
-                return pos.x >= visualX && pos.x <= visualX + visualWidth && pos.y >= visualY && pos.y <= visualY + visualHeight;
+                const bounds = getBlockVisualBounds(b);
+                return pos.x >= bounds.x && pos.x <= bounds.x + bounds.width && 
+                       pos.y >= bounds.y && pos.y <= bounds.y + bounds.height;
             });
             return clickedBlocks.length > 0 ? clickedBlocks.sort((a, b) => getDepth(a) - getDepth(b)).pop() : null;
         };
@@ -572,6 +819,47 @@
             return false;
         };
 
+        // --- ROW HEIGHT EQUALIZATION HELPERS ---
+        function getRowBlocks(rowIndex, parentId) {
+            return blocks.filter(b => (b.parentId || null) === (parentId || null) && b.row === rowIndex);
+        }
+
+        function getParentFor(block) {
+            return block && block.parentId ? blocks.find(b => b.id === block.parentId) : null;
+        }
+
+        function capRowSpanToParent(block, desiredRowSpan) {
+            const p = getParentFor(block);
+            if (!p || typeof p.row !== 'number' || typeof p.rowSpan !== 'number') return Math.max(1, desiredRowSpan);
+            const maxSpan = Math.max(1, (p.row + p.rowSpan) - block.row);
+            return Math.max(1, Math.min(desiredRowSpan, maxSpan));
+        }
+
+        // Make all blocks in the given row (same parent) adopt the target rowSpan.
+        // If targetRowSpan is not provided, use the maximum existing span in that row
+        // but cap by parent bounds so we don't overflow the container.
+        function equalizeRowHeight(parentId, rowIndex, targetRowSpan) {
+            const rowMates = getRowBlocks(rowIndex, parentId);
+            if (rowMates.length <= 1) return; // nothing to do
+            let span = targetRowSpan;
+            if (typeof span !== 'number' || !isFinite(span) || span < 1) {
+                span = Math.max(...rowMates.map(b => Math.max(1, b.rowSpan || 1)));
+            }
+            // Cap span to what's allowed by all parents of row mates
+            span = Math.max(1, Math.min(span, ...rowMates.map(b => capRowSpanToParent(b, span))));
+            rowMates.forEach(b => { b.rowSpan = span; });
+        }
+
+        // When a block is added or dragged into a row with an existing height,
+        // adopt that row's height for the new/moved block (do not resize the whole row here).
+        function adoptRowHeightForBlock(block) {
+            if (!block) return;
+            const mates = getRowBlocks(block.row, block.parentId).filter(b => b.id !== block.id);
+            if (mates.length === 0) return;
+            const rowSpan = Math.max(...mates.map(b => Math.max(1, b.rowSpan || 1)));
+            block.rowSpan = capRowSpanToParent(block, rowSpan);
+        }
+
         // --- DRAWING FUNCTIONS ---
         const resizeCanvas = () => {
             // Start with the visible container size
@@ -589,8 +877,9 @@
                 const margin = 50;
                 let maxRight = 0, maxBottom = 0;
                 for (const b of blocks) {
-                    const right = (typeof b.x === 'number' ? b.x : 0) + (typeof b.width === 'number' ? b.width : 0);
-                    const bottom = (typeof b.y === 'number' ? b.y : 0) + (typeof b.height === 'number' ? b.height : 0);
+                    const bounds = getBlockVisualBounds(b);
+                    const right = bounds.pixelX + bounds.pixelWidth;
+                    const bottom = bounds.pixelY + bounds.pixelHeight;
                     if (right > maxRight) maxRight = right;
                     if (bottom > maxBottom) maxBottom = bottom;
                 }
@@ -607,13 +896,13 @@
             const sortedBlocks = [...blocks].sort((a, b) => getDepth(a) - getDepth(b));
             sortedBlocks.forEach(block => {
                 const isParent = blocks.some(b => b.parentId === block.id);
-                const padding = getVisualPadding(block);
+                const bounds = getBlockVisualBounds(block);
                 
-                // Calculate visual bounds with padding
-                const visualX = block.x + padding;
-                const visualY = block.y + padding;
-                const visualWidth = block.width - (2 * padding);
-                const visualHeight = block.height - (2 * padding);
+                // Use visual bounds for rendering
+                const visualX = bounds.x;
+                const visualY = bounds.y;
+                const visualWidth = bounds.width;
+                const visualHeight = bounds.height;
                 
                 // If block has color, use it; otherwise fallback to existing scheme
                 if (block.color) {
@@ -659,13 +948,16 @@
 
         function drawArrow(fromBlock, toBlock, label, isSelected = false, arrowType = '-->') {
             // Calculate connection points (center of each block edge)
+            const fromBounds = getBlockVisualBounds(fromBlock);
+            const toBounds = getBlockVisualBounds(toBlock);
+            
             const fromCenter = {
-                x: fromBlock.x + fromBlock.width / 2,
-                y: fromBlock.y + fromBlock.height / 2
+                x: fromBounds.pixelX + fromBounds.pixelWidth / 2,
+                y: fromBounds.pixelY + fromBounds.pixelHeight / 2
             };
             const toCenter = {
-                x: toBlock.x + toBlock.width / 2,
-                y: toBlock.y + toBlock.height / 2
+                x: toBounds.pixelX + toBounds.pixelWidth / 2,
+                y: toBounds.pixelY + toBounds.pixelHeight / 2
             };
             
             // Find edge intersection points
@@ -691,25 +983,26 @@
         }
 
         function getBlockEdgePoint(block, targetPoint) {
-            const centerX = block.x + block.width / 2;
-            const centerY = block.y + block.height / 2;
+            const bounds = getBlockVisualBounds(block);
+            const centerX = bounds.pixelX + bounds.pixelWidth / 2;
+            const centerY = bounds.pixelY + bounds.pixelHeight / 2;
             
             const dx = targetPoint.x - centerX;
             const dy = targetPoint.y - centerY;
             
             // Calculate intersection with block edges
-            const halfWidth = block.width / 2;
-            const halfHeight = block.height / 2;
+            const halfWidth = bounds.pixelWidth / 2;
+            const halfHeight = bounds.pixelHeight / 2;
             
             if (Math.abs(dx) * halfHeight > Math.abs(dy) * halfWidth) {
                 // Intersects left or right edge
-                const x = dx > 0 ? block.x + block.width : block.x;
+                const x = dx > 0 ? bounds.pixelX + bounds.pixelWidth : bounds.pixelX;
                 const y = centerY + (dy * halfWidth) / Math.abs(dx);
                 return { x, y };
             } else {
                 // Intersects top or bottom edge
                 const x = centerX + (dx * halfHeight) / Math.abs(dy);
-                const y = dy > 0 ? block.y + block.height : block.y;
+                const y = dy > 0 ? bounds.pixelY + bounds.pixelHeight : bounds.pixelY;
                 return { x, y };
             }
         }
@@ -833,11 +1126,11 @@
     document.addEventListener('click', (e)=>{ if (colorHud && !colorHud.contains(e.target)) { colorHud.classList.add('hidden'); } });
 
     function drawResizeHandles(block) {
-            const padding = getVisualPadding(block);
-            const visualX = block.x + padding;
-            const visualY = block.y + padding;
-            const visualWidth = block.width - (2 * padding);
-            const visualHeight = block.height - (2 * padding);
+            const bounds = getBlockVisualBounds(block);
+            const visualX = bounds.x;
+            const visualY = bounds.y;
+            const visualWidth = bounds.width;
+            const visualHeight = bounds.height;
             
             const size = 8, h = size / 2;
             const midX = visualX + visualWidth/2, midY = visualY + visualHeight/2;
@@ -856,8 +1149,10 @@
         }
 
     function draw() { 
-        // Ensure canvas covers all blocks before drawing so nothing is clipped
-        ensureCanvasFitsBlocks();
+    // Auto-compute visual row heights before drawing
+    recomputeTopRowHeights();
+    // Ensure canvas covers all blocks before drawing so nothing is clipped
+    ensureCanvasFitsBlocks();
         ctx.clearRect(0, 0, canvas.width, canvas.height); 
         // Draw ghosted space indicators (visualize where `space` / `space:N` tokens will be emitted)
         drawGhostSpaces();
@@ -963,17 +1258,22 @@
     }
         
         // --- EVENT HANDLERS & LOGIC ---
-        const snapToGrid = value => Math.round(value / gridSize) * gridSize;
         const getMousePos = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+        
+        // Convert mouse position to logical grid position
+        const getMouseGridPos = e => {
+            const pos = getMousePos(e);
+            return pixelToGrid(pos.x, pos.y);
+        };
         
         function isOverResizeHandle(pos, block) {
             if (!selectedBlocks.has(block)) return null;
             
-            const padding = getVisualPadding(block);
-            const visualX = block.x + padding;
-            const visualY = block.y + padding;
-            const visualWidth = block.width - (2 * padding);
-            const visualHeight = block.height - (2 * padding);
+            const bounds = getBlockVisualBounds(block);
+            const visualX = bounds.x;
+            const visualY = bounds.y;
+            const visualWidth = bounds.width;
+            const visualHeight = bounds.height;
             
             const h = 4, midX = visualX + visualWidth/2, midY = visualY + visualHeight/2;
             const inRange = (val, min, max) => val >= min-h && val <= max+h;
@@ -991,7 +1291,19 @@
         function hasOverlap(targetBlock, ignoreSet = new Set()) {
             for (const block of blocks) {
                 if (block === targetBlock || ignoreSet.has(block) || isAncestor(targetBlock, block) || isAncestor(block, targetBlock)) continue;
-                if (targetBlock.x < block.x + block.width && targetBlock.x + targetBlock.width > block.x && targetBlock.y < block.y + block.height && targetBlock.y + targetBlock.height > block.y) return true;
+                
+                // Check grid position overlap
+                const targetEndRow = targetBlock.row + targetBlock.rowSpan;
+                const targetEndCol = targetBlock.col + targetBlock.colSpan;
+                const blockEndRow = block.row + block.rowSpan;
+                const blockEndCol = block.col + block.colSpan;
+                
+                const overlaps = (
+                    targetBlock.row < blockEndRow && targetEndRow > block.row &&
+                    targetBlock.col < blockEndCol && targetEndCol > block.col
+                );
+                
+                if (overlaps) return true;
             }
             return false;
         }
@@ -1044,18 +1356,34 @@
                 if (resizeHandle) {
                     resizing = true; currentBlock = topBlock;
                     dragStartStates.set(topBlock, { ...topBlock });
+                    // Include row mates in dragStartStates so equalization can safely revert if overlap
+                    const mates = getRowBlocks(topBlock.row, topBlock.parentId).filter(b => b.id !== topBlock.id);
+                    mates.forEach(m => { if (!dragStartStates.has(m)) dragStartStates.set(m, { ...m }); });
                 } else {
                     dragging = true; currentBlock = topBlock;
                     if (!e.ctrlKey && !e.shiftKey && !selectedBlocks.has(topBlock)) { selectedBlocks.clear(); selectedBlocks.add(topBlock); }
                     else if (e.ctrlKey || e.shiftKey) { selectedBlocks.has(topBlock) ? selectedBlocks.delete(topBlock) : selectedBlocks.add(topBlock); }
-                    dragOffsetX = pos.x - topBlock.x; dragOffsetY = pos.y - topBlock.y;
+                    const gridPos = getMouseGridPos(e);
+                    dragOffsetRow = gridPos.row - topBlock.row; 
+                    dragOffsetCol = gridPos.col - topBlock.col;
                     selectedBlocks.forEach(b => dragStartStates.set(b, { ...b }));
                 }
             } else {
                 if (!e.ctrlKey && !e.shiftKey) selectedBlocks.clear();
                 if (e.button !== 2 && !arrowMode) {
-                    drawing = true; startX = snapToGrid(pos.x); startY = snapToGrid(pos.y);
-                    currentBlock = { id: generateFriendlyId(), parentId: null, x: startX, y: startY, width: gridSize, height: gridSize, label: 'New Block' };
+                    const gridPos = getMouseGridPos(e);
+                    drawing = true; 
+                    startRow = gridPos.row; 
+                    startCol = gridPos.col;
+                    currentBlock = { 
+                        id: generateFriendlyId(), 
+                        parentId: null, 
+                        row: startRow, 
+                        col: startCol, 
+                        rowSpan: 1, 
+                        colSpan: 1, 
+                        text: 'New Block' 
+                    };
                     blocks.push(currentBlock);
                 }
             }
@@ -1072,11 +1400,19 @@
             const blockMap = new Map(blocks.map(b => [b.id, b]));
             for (let i = connections.length - 1; i >= 0; i--) {
                 const conn = connections[i];
-                const from = blockMap.get(conn.from);
-                const to = blockMap.get(conn.to);
+                const from = blockMap.get(conn.fromId);
+                const to = blockMap.get(conn.toId);
                 if (!from || !to) continue;
-                const p1 = getBlockEdgePoint(from, { x: to.x + to.width / 2, y: to.y + to.height / 2 });
-                const p2 = getBlockEdgePoint(to, { x: from.x + from.width / 2, y: from.y + from.height / 2 });
+                const fromBounds = getBlockVisualBounds(from);
+                const toBounds = getBlockVisualBounds(to);
+                const p1 = getBlockEdgePoint(from, { 
+                    x: toBounds.pixelX + toBounds.pixelWidth / 2, 
+                    y: toBounds.pixelY + toBounds.pixelHeight / 2 
+                });
+                const p2 = getBlockEdgePoint(to, { 
+                    x: fromBounds.pixelX + fromBounds.pixelWidth / 2, 
+                    y: fromBounds.pixelY + fromBounds.pixelHeight / 2 
+                });
                 if (pointNearSegment(pos, p1, p2, tol)) return conn;
             }
             return null;
@@ -1136,51 +1472,138 @@
             }
 
             if (drawing) {
-                currentBlock.width = Math.max(gridSize, snapToGrid(pos.x) - startX);
-                currentBlock.height = Math.max(gridSize, snapToGrid(pos.y) - startY);
+                const gridPos = getMouseGridPos(e);
+                const newColSpan = Math.max(1, gridPos.col - startCol + 1);
+                const newRowSpan = Math.max(1, gridPos.row - startRow + 1);
+                currentBlock.colSpan = newColSpan;
+                currentBlock.rowSpan = newRowSpan;
             } else if (dragging) {
-                const dx = snapToGrid(pos.x - dragOffsetX) - currentBlock.x;
-                const dy = snapToGrid(pos.y - dragOffsetY) - currentBlock.y;
+                const gridPos = getMouseGridPos(e);
+                const newRow = gridPos.row - dragOffsetRow;
+                const newCol = gridPos.col - dragOffsetCol;
+                const deltaRow = newRow - currentBlock.row;
+                const deltaCol = newCol - currentBlock.col;
+                
                 const allToMove = new Set();
                 selectedBlocks.forEach(b => getDescendants(b, blocks, true).forEach(d => allToMove.add(d)));
-                allToMove.forEach(b => { b.x += dx; b.y += dy; });
+                allToMove.forEach(b => { 
+                    b.row += deltaRow; 
+                    b.col += deltaCol; 
+                    // Ensure blocks don't go negative
+                    b.row = Math.max(0, b.row);
+                    b.col = Math.max(0, b.col);
+                });
             } else if (resizing) {
-                const o = dragStartStates.get(currentBlock), s = {x: snapToGrid(pos.x), y: snapToGrid(pos.y)};
-                let {x, y, width, height} = currentBlock;
-                if (resizeHandle.includes('w')) { width = o.x + o.width - s.x; if(width >= gridSize) x = s.x; }
-                if (resizeHandle.includes('e')) width = s.x - o.x;
-                if (resizeHandle.includes('n')) { height = o.y + o.height - s.y; if(height >= gridSize) y = s.y; }
-                if (resizeHandle.includes('s')) height = s.y - o.y;
-                width = Math.max(gridSize, width); height = Math.max(gridSize, height);
-                const children = blocks.filter(b => b.parentId === currentBlock.id);
-                if(children.length > 0) {
-                    const bounds = children.reduce((a,c) => ({minX:Math.min(a.minX,c.x),minY:Math.min(a.minY,c.y),maxX:Math.max(a.maxX,c.x+c.width),maxY:Math.max(a.maxY,c.y+c.height)}),{minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity});
-                    const finalX = resizeHandle.includes('w') ? x : currentBlock.x;
-                    const finalY = resizeHandle.includes('n') ? y : currentBlock.y;
-                    if (width >= bounds.maxX - finalX) { currentBlock.x = x; currentBlock.width = width; }
-                    if (height >= bounds.maxY - finalY) { currentBlock.y = y; currentBlock.height = height; }
-                } else { Object.assign(currentBlock, {x, y, width, height}); }
+                const gridPos = getMouseGridPos(e);
+                const originalState = dragStartStates.get(currentBlock);
+                
+                if (resizeHandle.includes('e')) {
+                    // Resize right: increase colSpan
+                    currentBlock.colSpan = Math.max(1, gridPos.col - currentBlock.col + 1);
+                }
+                if (resizeHandle.includes('w')) {
+                    // Resize left: move position and adjust colSpan
+                    const newCol = Math.min(gridPos.col, originalState.col + originalState.colSpan - 1);
+                    const newColSpan = originalState.col + originalState.colSpan - newCol;
+                    currentBlock.col = Math.max(0, newCol);
+                    currentBlock.colSpan = Math.max(1, newColSpan);
+                }
+                // Vertical resize no longer adjusts row height; height is auto-computed
             }
             draw();
         });
 
-        canvas.addEventListener('mouseup', () => {
-             if (drawing && (currentBlock.width < gridSize || currentBlock.height < gridSize || hasOverlap(currentBlock))) { blocks.pop(); }
-             else if (dragging && currentBlock) {
+        // Unified pointer-up handler so releasing the mouse anywhere (not only on the canvas)
+        // will properly end drawing/dragging/resizing. This prevents the "stuck to cursor"
+        // behavior when the user releases the button outside the canvas bounds (for example
+        // when dragging into the very first row near the top edge).
+        function handlePointerUp(e) {
+            if (drawing && (currentBlock.colSpan < 1 || currentBlock.rowSpan < 1 || hasOverlap(currentBlock))) {
+                blocks.pop();
+            } else if (dragging && currentBlock) {
+                // Choose parent using current mouse pointer position with an inner-first rule:
+                // - If pointer is inside a block's INNER (padded) bounds, prefer the DEEPEST such block (child-of-child when over blue)
+                // - Otherwise, if inside no inner bounds, fall back to RAW bounds and pick the nearest container sensibly
+                const pos = getMousePos(e);
+                const candidates = blocks.filter(b => b.id !== currentBlock.id && !isAncestor(currentBlock, b));
+
+                // First pass: inner (padded) bounds hits
+                const innerHits = [];
+                for (const p of candidates) {
+                    const vb = getBlockVisualBounds(p);
+                    const insideInner = pos.x >= vb.x && pos.x <= vb.x + vb.width &&
+                                        pos.y >= vb.y && pos.y <= vb.y + vb.height;
+                    if (insideInner) innerHits.push(p);
+                }
+
                 let newParent = null;
-                const {x, y, width, height} = currentBlock, cX = x + width/2, cY = y + height/2;
-                for(const p of blocks.filter(b => b.id !== currentBlock.id && !isAncestor(currentBlock,b))) {
-                    if (cX > p.x && cX < p.x + p.width && cY > p.y && cY < p.y + p.height) {
-                         if (!newParent || (p.width * p.height < newParent.width * newParent.height)) newParent = p;
+                if (innerHits.length > 0) {
+                    // Pick the deepest block among inner hits
+                    innerHits.sort((a, b) => getDepth(a) - getDepth(b));
+                    newParent = innerHits[innerHits.length - 1];
+                } else {
+                    // Fallback: use RAW bounds, but prefer a reasonable ancestor near the pointer
+                    const rawHits = [];
+                    for (const p of candidates) {
+                        const pb = getBlockVisualBounds(p);
+                        const insideRaw = pos.x >= pb.pixelX && pos.x <= pb.pixelX + pb.pixelWidth &&
+                                         pos.y >= pb.pixelY && pos.y <= pb.pixelY + pb.pixelHeight;
+                        if (insideRaw) rawHits.push(p);
+                    }
+                    if (rawHits.length > 0) {
+                        // Heuristic: choose the deepest block whose INNER also contains the point; if none, choose the one with
+                        // the greatest depth among those whose PARENT inner contains the point; otherwise default to smallest area.
+                        let preferred = rawHits.filter(p => {
+                            const vb = getBlockVisualBounds(p);
+                            return pos.x >= vb.x && pos.x <= vb.x + vb.width && pos.y >= vb.y && pos.y <= vb.y + vb.height;
+                        });
+                        if (preferred.length > 0) {
+                            preferred.sort((a, b) => getDepth(a) - getDepth(b));
+                            newParent = preferred[preferred.length - 1];
+                        } else {
+                            // Try using nearest ancestor whose inner contains the point
+                            let best = null;
+                            for (const p of rawHits) {
+                                let cur = p;
+                                while (cur && cur.parentId) {
+                                    const parent = blocks.find(x => x.id === cur.parentId);
+                                    if (!parent) break;
+                                    const vb = getBlockVisualBounds(parent);
+                                    const insideParentInner = pos.x >= vb.x && pos.x <= vb.x + vb.width && pos.y >= vb.y && pos.y <= vb.y + vb.height;
+                                    if (insideParentInner) { best = parent; break; }
+                                    cur = parent;
+                                }
+                            }
+                            if (best) newParent = best; else {
+                                // Last resort: choose smallest raw area (closest visual parent by size)
+                                rawHits.sort((a, b) => {
+                                    const pa = getBlockVisualBounds(a), pb = getBlockVisualBounds(b);
+                                    return (pa.pixelWidth * pa.pixelHeight) - (pb.pixelWidth * pb.pixelHeight);
+                                });
+                                newParent = rawHits[0];
+                            }
+                        }
                     }
                 }
-                currentBlock.parentId = (newParent && x >= newParent.x && x+width <= newParent.x+newParent.width && y >= newParent.y && y+height <= newParent.y+newParent.height) ? newParent.id : null;
-             } else if ((dragging || resizing) && [...dragStartStates.keys()].some(b => hasOverlap(b, new Set(dragStartStates.keys())))) {
+
+                currentBlock.parentId = newParent ? newParent.id : null;
+                // No per-block height to adopt; row height is visual at top-level only
+            } else if ((dragging || resizing) && [...dragStartStates.keys()].some(b => hasOverlap(b, new Set(dragStartStates.keys())))) {
                 dragStartStates.forEach((state, block) => Object.assign(block, state));
-             }
-            drawing = dragging = resizing = false; currentBlock = null; dragStartStates.clear();
-            updateMarkdown(); draw();
-        });
+            }
+
+
+            drawing = dragging = resizing = false;
+            currentBlock = null;
+            dragStartStates.clear();
+            updateMarkdown();
+            draw();
+        }
+
+        canvas.addEventListener('mouseup', handlePointerUp);
+        // Also listen on the global window so releasing the mouse outside the canvas
+        // still ends the current interaction and clears dragging state.
+        window.addEventListener('mouseup', handlePointerUp);
         
         canvas.addEventListener('dblclick', e => {
             const pos = getMousePos(e);
@@ -1201,11 +1624,19 @@
             // Hide any visible connection tooltip when entering edit mode
             const tooltip = document.getElementById('conn-tooltip'); if (tooltip) tooltip.classList.add('hidden');
             // position the editor at the midpoint of the connection
-            const fromBlock = getBlockById(conn.from);
-            const toBlock = getBlockById(conn.to);
+            const fromBlock = getBlockById(conn.fromId);
+            const toBlock = getBlockById(conn.toId);
             if (!fromBlock || !toBlock) return;
-            const fromPt = getBlockEdgePoint(fromBlock, { x: toBlock.x + toBlock.width / 2, y: toBlock.y + toBlock.height / 2 });
-            const toPt = getBlockEdgePoint(toBlock, { x: fromBlock.x + fromBlock.width / 2, y: fromBlock.y + fromBlock.height / 2 });
+            const fromBounds = getBlockVisualBounds(fromBlock);
+            const toBounds = getBlockVisualBounds(toBlock);
+            const fromPt = getBlockEdgePoint(fromBlock, { 
+                x: toBounds.pixelX + toBounds.pixelWidth / 2, 
+                y: toBounds.pixelY + toBounds.pixelHeight / 2 
+            });
+            const toPt = getBlockEdgePoint(toBlock, { 
+                x: fromBounds.pixelX + fromBounds.pixelWidth / 2, 
+                y: fromBounds.pixelY + fromBounds.pixelHeight / 2 
+            });
             const midX = Math.round((fromPt.x + toPt.x) / 2);
             const midY = Math.round((fromPt.y + toPt.y) / 2);
 
@@ -1226,7 +1657,14 @@
         
         function showTextEditor(block) {
             editingBlock = block;
-            Object.assign(textEditor.style, { display: 'block', left: `${block.x}px`, top: `${block.y}px`, width: `${block.width}px`, height: `${block.height}px` });
+            const bounds = getBlockVisualBounds(block);
+            Object.assign(textEditor.style, { 
+                display: 'block', 
+                left: `${bounds.x}px`, 
+                top: `${bounds.y}px`, 
+                width: `${bounds.width}px`, 
+                height: `${bounds.height}px` 
+            });
             const currentText = block.label || block.text || '';
             textEditor.value = currentText.replace(/\\n/g, '\n'); textEditor.focus(); textEditor.select();
             // Ensure the connection tooltip is hidden while the text editor is focused for editing blocks
@@ -1355,9 +1793,9 @@
                 const targetConn = activeContextMenuConnection || (connections.find(c => selectedConnections.has(c._id)) || null);
                 if (targetConn) {
                     // For backwards arrow, swap from/to and use forward arrow type
-                    const tempFrom = targetConn.from;
-                    targetConn.from = targetConn.to;
-                    targetConn.to = tempFrom;
+                    const tempFrom = targetConn.fromId;
+                    targetConn.fromId = targetConn.toId;
+                    targetConn.toId = tempFrom;
                     targetConn.arrowType = '-->';
                     draw(); updateMarkdown();
                 }
@@ -1415,11 +1853,32 @@
                 if (!autosaveEnabled) return; // skip saving during initialization
                 // Don't overwrite an existing saved diagram with an empty canvas/title
                 if ((!blocks || blocks.length === 0) && !diagramTitleInput.value.trim()) return;
-                // Create a JSON-safe snapshot of blocks and connections
+
+                // Create a JSON-safe snapshot of blocks and connections.
+                // Prefer logical grid properties (row/col/rowSpan/colSpan) but include
+                // legacy pixel properties for backward compatibility.
                 const blocksSnapshot = blocks.map(b => {
-                    const { id, x, y, width, height, text, label, parentId, blockWidth, originalId, color } = b;
-                    return { id, x, y, width, height, text: text || label, label: label || text, parentId, blockWidth, originalId, color };
+                    return {
+                        id: b.id,
+                        // logical coordinates (preferred)
+                        row: typeof b.row === 'number' ? b.row : undefined,
+                        col: typeof b.col === 'number' ? b.col : undefined,
+                        rowSpan: typeof b.rowSpan === 'number' ? b.rowSpan : undefined,
+                        colSpan: typeof b.colSpan === 'number' ? b.colSpan : undefined,
+                        // legacy pixel coordinates (fallback)
+                        x: typeof b.x === 'number' ? b.x : (typeof b.col === 'number' ? b.col * gridSize : undefined),
+                        y: typeof b.y === 'number' ? b.y : (typeof b.row === 'number' ? b.row * gridSize : undefined),
+                        width: typeof b.width === 'number' ? b.width : (typeof b.colSpan === 'number' ? b.colSpan * gridSize : undefined),
+                        height: typeof b.height === 'number' ? b.height : (typeof b.rowSpan === 'number' ? b.rowSpan * gridSize : undefined),
+                        text: b.text || b.label || '',
+                        label: b.label || b.text || '',
+                        parentId: b.parentId || null,
+                        blockWidth: (typeof b.blockWidth === 'number') ? b.blockWidth : undefined,
+                        originalId: b.originalId,
+                        color: b.color || null
+                    };
                 });
+
                 const connectionsSnapshot = (connections || []).map(c => ({
                     _id: c._id || null,
                     fromId: c.fromId,
@@ -1427,7 +1886,15 @@
                     label: c.label || '',
                     arrowType: c.arrowType || '-->'
                 }));
-                const payload = { title: diagramTitleInput.value || '', blocks: blocksSnapshot, connections: connectionsSnapshot };
+
+                const payload = {
+                    version: 2,
+                    title: diagramTitleInput.value || '',
+                    diagramStartTag: diagramStartTag || 'block',
+                    blocks: blocksSnapshot,
+                    connections: connectionsSnapshot
+                };
+
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
                 // Log success for debugging in browser console
                 console.log('Saved canvas state to localStorage (blocks:', blocksSnapshot.length, 'connections:', connectionsSnapshot.length, ')');
@@ -1440,34 +1907,57 @@
                 if (!raw) return false;
                 const parsed = JSON.parse(raw);
                 if (parsed && Array.isArray(parsed.blocks)) {
-                    // Ensure loaded blocks are snapped to grid (we already snap on manual load too)
-                    const snapFloor = v => Math.floor(v / gridSize) * gridSize;
-                    // Reconstruct blocks (plain objects) from snapshot
+                    // Reconstruct blocks into the app's logical grid shape
                     const reconstructed = parsed.blocks.map(b => {
+                        // If logical coordinates are present, use them directly
+                        let row, col, rowSpan, colSpan;
+                        if (typeof b.row === 'number' && typeof b.col === 'number') {
+                            row = Math.max(0, Math.floor(b.row));
+                            col = Math.max(0, Math.floor(b.col));
+                            rowSpan = Math.max(1, Math.floor(b.rowSpan || 1));
+                            colSpan = Math.max(1, Math.floor(b.colSpan || 1));
+                        } else if (typeof b.y === 'number' || typeof b.x === 'number' || typeof b.width === 'number' || typeof b.height === 'number') {
+                            // Backwards compatibility: derive grid coordinates from pixel values
+                            const x = typeof b.x === 'number' ? b.x : 0;
+                            const y = typeof b.y === 'number' ? b.y : 0;
+                            const width = typeof b.width === 'number' ? b.width : gridSize;
+                            const height = typeof b.height === 'number' ? b.height : gridSize;
+                            row = Math.max(0, Math.round(y / gridSize));
+                            col = Math.max(0, Math.round(x / gridSize));
+                            rowSpan = Math.max(1, Math.round(height / gridSize));
+                            colSpan = Math.max(1, Math.round(width / gridSize));
+                        } else {
+                            // Minimal fallback
+                            row = 0; col = 0; rowSpan = 1; colSpan = 1;
+                        }
+
                         return {
                             id: b.id,
-                            x: typeof b.x === 'number' ? snapFloor(b.x) : 0,
-                            y: typeof b.y === 'number' ? snapFloor(b.y) : 0,
-                            width: typeof b.width === 'number' ? Math.max(gridSize, Math.floor(b.width / gridSize) * gridSize) : gridSize,
-                            height: typeof b.height === 'number' ? Math.max(gridSize, Math.floor(b.height / gridSize) * gridSize) : gridSize,
-                            text: b.text || b.id,
                             parentId: b.parentId || null,
-                            blockWidth: b.blockWidth || (b.blockWidth === 0 ? 0 : 1),
+                            row: row,
+                            col: col,
+                            rowSpan: rowSpan,
+                            colSpan: colSpan,
+                            text: b.text || b.label || b.id,
+                            blockWidth: (typeof b.blockWidth === 'number') ? b.blockWidth : (b.blockWidth === 0 ? 0 : 1),
                             originalId: b.originalId,
                             color: b.color || null
                         };
                     });
 
                     blocks = reconstructed;
+
                     // Restore connections and ensure each has a unique _id
                     const loadedConnections = (parsed.connections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, fromId: c.fromId || c.from, toId: c.toId || c.to, label: c.label || '', arrowType: c.arrowType || '-->' }));
                     connections = loadedConnections;
+
                     diagramTitleInput.value = parsed.title || '';
+                    if (parsed.diagramStartTag) diagramStartTag = parsed.diagramStartTag;
                     selectedBlocks.clear();
                     draw();
                     updateMarkdown();
                     // Scroll container to show the loaded diagram
-                    scrollCanvasToFitBlocks();
+                    if (typeof scrollCanvasToFitBlocks === 'function') scrollCanvasToFitBlocks();
                     console.log('Loaded canvas state from localStorage (blocks:', blocks.length, 'connections:', connections.length, ')');
                     return true;
                 }
@@ -1513,7 +2003,88 @@
             markdownOutput.value = output;
             // Persist canvas state whenever the markdown/diagram is updated
             saveCanvasState();
+            // Update live Mermaid preview when markdown changes
+            renderMermaidPreview(output);
         }
+
+        // --- Mermaid preview & tab logic ---
+        const tabCanvasBtn = document.getElementById('tab-canvas');
+        const tabMermaidBtn = document.getElementById('tab-mermaid');
+        const mermaidPreviewEl = document.getElementById('mermaid-preview');
+        const canvasPanel = document.querySelector('.canvas-panel');
+
+        function setActiveTab(tab) {
+            const mermaidPanel = document.getElementById('mermaid-panel');
+            const mainArea = document.querySelector('main.app-main');
+
+            if (tab === 'canvas') {
+                tabCanvasBtn.classList.add('active');
+                tabMermaidBtn.classList.remove('active');
+                if (mainArea) mainArea.style.display = '';
+                if (canvasPanel) canvasPanel.style.display = '';
+                if (mermaidPanel) mermaidPanel.style.display = 'none';
+            } else {
+                tabCanvasBtn.classList.remove('active');
+                tabMermaidBtn.classList.add('active');
+                if (mainArea) mainArea.style.display = 'none';
+                if (mermaidPanel) mermaidPanel.style.display = 'flex';
+                // Re-render preview to ensure it gets correct sizes after being shown
+                renderMermaidPreview(markdownOutput.value || '');
+            }
+        }
+
+        tabCanvasBtn.addEventListener('click', () => setActiveTab('canvas'));
+        tabMermaidBtn.addEventListener('click', () => setActiveTab('mermaid'));
+
+        // Initialize mermaid
+        try {
+            if (window.mermaid) {
+                mermaid.initialize({ startOnLoad: false, theme: 'base', securityLevel: 'loose' });
+            }
+        } catch (e) { console.warn('Mermaid init failed', e); }
+
+        // Render the mermaid markdown output into the preview container (non-interactive)
+        function renderMermaidPreview(markdown) {
+            if (!mermaidPreviewEl) return;
+            if (!window.mermaid) { mermaidPreviewEl.innerText = 'Mermaid.js not loaded'; return; }
+
+            // Extract diagram body beginning at the first line that starts with block or block-beta
+            const lines = (markdown || '').split('\n');
+            const startLineIdx = lines.findIndex(l => /^\s*(block(?:-beta)?)\s*$/.test(l));
+            let diagramBody = '';
+            if (startLineIdx >= 0) {
+                diagramBody = lines.slice(startLineIdx).join('\n');
+            } else {
+                diagramBody = markdown || '';
+            }
+
+            // Mermaid OSS supports 'block' and 'block-beta'. If preview fails, try to fallback.
+            const tryRender = async (code) => {
+                const id = 'mmd-' + Math.random().toString(36).slice(2, 9);
+                try {
+                    const { svg } = await mermaid.render(id, code);
+                    mermaidPreviewEl.innerHTML = svg;
+                    return true;
+                } catch (err) {
+                    console.warn('Mermaid render error', err);
+                    return false;
+                }
+            };
+
+            (async () => {
+                // First try as-is
+                let ok = await tryRender(diagramBody);
+                if (!ok && diagramBody.startsWith('block-beta')) {
+                    ok = await tryRender(diagramBody.replace(/^block-beta/, 'block'));
+                }
+                if (!ok) {
+                    mermaidPreviewEl.innerHTML = '<div style="color:#6b7280">(Preview unavailable. Check syntax.)</div>';
+                }
+            })();
+        }
+
+    // Default to Canvas tab on load (call after DOM ready)
+    document.addEventListener('DOMContentLoaded', () => setActiveTab('canvas'));
 
         // --- TEST HARNESS ---
 
@@ -1524,7 +2095,10 @@
             selectedBlocks = new Set([...selectedBlocks].filter(b => !allToDelete.has(b.id)));
         }
         window.addEventListener('keydown', (e) => {
-            if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+            const ae = document.activeElement;
+            const isFormEl = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+            const isVisible = ae && ae instanceof HTMLElement ? ae.offsetParent !== null : true;
+            if (isFormEl && isVisible) return;
             // Toggle Arrow Mode with 'A' or 'a'
             if (e.key === 'A' || e.key === 'a') {
                 e.preventDefault();
@@ -1624,6 +2198,7 @@
 
         function parseBlockDiagramInput(input) {
             // Parse Mermaid block diagram syntax and create blocks
+            // This function only handles parsing structure, not visual positioning
             
             // Extract title from block comment, title: line, or Markdown heading (lines starting with '#')
             const titleMatch = input.match(/^%%\s*(.*?)\s*%%/m) || input.match(/^title:\s*(.*?)$/m) || input.match(/^#\s*(.*?)$/m);
@@ -1634,11 +2209,11 @@
             const columnCount = columnsMatch ? parseInt(columnsMatch[1]) : 3; // default to 3 columns
             
             // Remove comments, title, block, and columns lines for parsing
-         const cleanInput = input
-          .split('\n')
-          .filter(line => !line.trim().match(/^%%/) && !line.trim().match(/^title:/) && !line.trim().match(/^#\s*/) &&
-              !line.trim().match(/^block(?:-beta)?\s*$/) && !line.trim().match(/^columns\s+\d+\s*$/))
-          .join('\n');
+            const cleanInput = input
+                .split('\n')
+                .filter(line => !line.trim().match(/^%%/) && !line.trim().match(/^title:/) && !line.trim().match(/^#\s*/) &&
+                    !line.trim().match(/^block(?:-beta)?\s*$/) && !line.trim().match(/^columns\s+\d+\s*$/))
+                .join('\n');
             
             // Parse block definitions and connections with nesting support
             const lines = cleanInput.split('\n');
@@ -1646,23 +2221,10 @@
             const connections = [];
             const parentStack = []; // Stack to track current parent context
             
-            // Grid positioning based on column count
+            // Grid positioning state (logical, not visual)
             let currentRow = 0;
             let currentCol = 0;
-            // When a 'space' token is parsed we set this flag so the next block
-            // placement can skip the usual wrap behavior. This lets explicit
-            // 'space' tokens push blocks to the right on the same row, allowing
-            // the generator to later infer a larger column count.
-            let skipNextWrap = false;
-            const blockWidth = 120;
-            const blockHeight = 80;
-            const padding = 20;
-            
-            function calculatePosition(row, col) {
-                const x = col * (blockWidth + padding) + 50;
-                const y = row * (blockHeight + padding) + 50;
-                return { x, y };
-            }
+            let skipNextWrap = false; // Track explicit space tokens
             
             function createBlock(blockId, label, parentId = null, useGrid = true, widthFactor = 1) {
                 // If block already exists, possibly update its blockWidth and return it
@@ -1674,22 +2236,25 @@
                     return existing;
                 }
 
-                let x, y, width = 100, height = 60;
-                // Determine width factor: prefer explicit param, otherwise default to 1
-                let blockWidthFactor = Math.max(1, widthFactor || 1);
+                // Create block with only logical structure - no visual positioning
+                const blockWidthFactor = Math.max(1, widthFactor || 1);
+                
+                const block = {
+                    id: blockId,
+                    // Store logical grid position for layout system
+                    _gridRow: currentRow,
+                    _gridCol: currentCol,
+                    _useGrid: useGrid && !parentId,
+                    text: label || blockId,
+                    parentId: parentId,
+                    blockWidth: blockWidthFactor,
+                    _diagramColumns: columnCount
+                };
 
+                // Track grid advancement for logical positioning
                 if (useGrid && !parentId) {
-                    // Use grid positioning for top-level blocks
-                    const pos = calculatePosition(currentRow, currentCol);
-                    x = pos.x;
-                    y = pos.y;
-                    // Apply width factor to block pixel width
-                    width = 100 * blockWidthFactor;
-
-                    // Advance grid position by the width factor (span columns)
                     currentCol += blockWidthFactor;
                     if (skipNextWrap) {
-                        // Honor the skip for a single placement then clear the flag
                         skipNextWrap = false;
                     } else {
                         while (currentCol >= columnCount) {
@@ -1697,57 +2262,7 @@
                             currentRow++;
                         }
                     }
-                } else if (parentId) {
-                    // Position child blocks inside parent with proper layout
-                    const parent = blockMap.get(parentId);
-                    if (parent) {
-                        // Count existing children to determine position
-                        const existingChildren = Array.from(blockMap.values()).filter(b => b.parentId === parentId);
-                        const childIndex = existingChildren.length;
-                        
-                        // Layout children in a grid within the parent
-                        const childPadding = 10;
-                        const childWidth = 80;
-                        const childHeight = 40;
-                        const childrenPerRow = Math.max(1, Math.floor((parent.width - 2 * childPadding) / (childWidth + childPadding)));
-                        
-                        const childRow = Math.floor(childIndex / childrenPerRow);
-                        const childCol = childIndex % childrenPerRow;
-                        
-                        x = parent.x + childPadding + childCol * (childWidth + childPadding);
-                        y = parent.y + 30 + childRow * (childHeight + childPadding);
-                        width = childWidth;
-                        height = childHeight;
-                        
-                        // Ensure parent is large enough to contain all children
-                        const requiredWidth = Math.max(120, 2 * childPadding + childrenPerRow * (childWidth + childPadding));
-                        const requiredHeight = Math.max(80, 30 + (childRow + 1) * (childHeight + childPadding) + childPadding);
-                        
-                        parent.width = Math.max(parent.width, requiredWidth);
-                        parent.height = Math.max(parent.height, requiredHeight);
-                    } else {
-                        // Fallback positioning
-                        const pos = calculatePosition(currentRow, currentCol);
-                        x = pos.x;
-                        y = pos.y;
-                    }
-                } else {
-                    // Fallback positioning
-                    const pos = calculatePosition(currentRow, currentCol);
-                    x = pos.x;
-                    y = pos.y;
                 }
-
-                const block = {
-                    id: blockId,
-                    x: x,
-                    y: y,
-                    width: width,
-                    height: height,
-                    text: label || blockId,
-                    parentId: parentId,
-                    blockWidth: blockWidthFactor
-                };
 
                 blockMap.set(blockId, block);
                 return block;
@@ -1779,6 +2294,8 @@
                 // Reset column cursor at the start of each logical line so leading `space` tokens
                 // apply to the current row rather than accumulating from previous rows.
                 currentCol = 0;
+                // Track if we've already advanced to the next row during token processing
+                const startingRow = currentRow;
 
                 if (!trimmed) continue;
                 
@@ -1793,18 +2310,31 @@
                     continue;
                 }
                 
-                // Parse block:ID syntax - starts a new parent block (allow hyphens in IDs)
-                // Allow optional label and color annotation after block:ID like `block:ID["Label"] %%color:93C5FD`
-                const blockColonMatch = trimmed.match(/^block:([\w-]+)(?:\["([^\"]*)"\])?(?:\s+%%color:(#?[0-9A-Fa-f]{6}))?$/);
+                // Parse block:ID syntax — support both legacy and preferred orders for width and label
+                // Preferred form: block:ID["Label"]:N
+                // Legacy forms:   block:ID:2, block:ID["Label"], block:ID:3["Label"]
+                const blockLabelWidthFirst = trimmed.match(/^block:([\w-]+)(?:\["([^\"]*)"\])(?::(\d+))?(?:\s+%%color:(#?[0-9A-Fa-f]{6}))?$/);
+                const blockWidthFirst = blockLabelWidthFirst ? null : trimmed.match(/^block:([\w-]+)(?::(\d+))?(?:\["([^\"]*)"\])?(?:\s+%%color:(#?[0-9A-Fa-f]{6}))?$/);
+                const blockColonMatch = blockLabelWidthFirst || blockWidthFirst;
                 if (blockColonMatch) {
-                    const [, blockId, labelMatch, colorMatch] = blockColonMatch;
+                    // Map capture groups depending on which style matched
+                    // blockLabelWidthFirst: [full, id, label, width, color]
+                    // blockWidthFirst:     [full, id, width, label, color]
+                    const isLabelWidthFirst = !!blockLabelWidthFirst;
+                    const [, blockId, g2, g3, colorMatch] = blockColonMatch;
+                    const labelMatch = isLabelWidthFirst ? g2 : g3;
+                    const widthParam = isLabelWidthFirst ? g3 : g2;
                     const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
 
                     // Create or fetch; if a label is explicitly provided use it, otherwise preserve any existing label
-                    const block = createBlock(blockId, labelMatch || blockId, currentParent);
+                    const widthFactor = widthParam ? parseInt(widthParam, 10) : undefined;
+                    const block = createBlock(blockId, labelMatch || blockId, currentParent, true, widthFactor);
                     block.originalId = blockId;
                     if (labelMatch && labelMatch.trim()) {
                         block.text = labelMatch;
+                    }
+                    if (widthFactor && !isNaN(widthFactor)) {
+                        block.blockWidth = Math.max(1, widthFactor);
                     }
                     if (colorMatch) {
                         block.color = colorMatch.startsWith('#') ? colorMatch : '#' + colorMatch;
@@ -1917,9 +2447,12 @@
 
                 // After processing tokens on this input line, advance to the next row so
                 // subsequent logical lines are placed on the next canvas row.
+                // Only advance if we haven't already advanced during token processing (to avoid blank rows).
                 // (Lines that used 'continue' earlier — e.g. connections, block:ID, end —
                 // will have skipped token processing and won't reach this increment.)
-                currentRow++;
+                if (currentRow === startingRow) {
+                    currentRow++;
+                }
             }
             
             // Convert Map to Array for the blocks
@@ -1960,109 +2493,69 @@
             return { title, blocks: newBlocks, connections };
         }
 
-        // --- Mermaid Generator ---
-        function detectAndCreateVerticalSpans(topLevelBlocks) {
-            // Only apply vertical span detection when there are at least 3 blocks
-            // and there's evidence of a vertical spanning layout
-            if (topLevelBlocks.length < 3) {
-                return topLevelBlocks;
-            }
+        // Convert parsed blocks from logical grid coordinates to internal grid format
+        function applyBlockPositioning(blocks) {
+            if (!Array.isArray(blocks) || blocks.length === 0) return blocks;
             
-            // Group blocks into columns based on X position (with tolerance)
-            const columnTolerance = 50; // px tolerance for column alignment
-            const rowTolerance = 20;    // px tolerance for row alignment
-            
-            // Sort blocks by X position to process columns left to right
-            const sortedBlocks = topLevelBlocks.slice().sort((a, b) => a.x - b.x);
-            const columns = [];
-            
-            // Group blocks into columns
-            for (const block of sortedBlocks) {
-                let placed = false;
-                for (const col of columns) {
-                    // Check if block overlaps horizontally with this column
-                    const colLeft = Math.min(...col.blocks.map(b => b.x));
-                    const colRight = Math.max(...col.blocks.map(b => b.x + b.width));
-                    const blockLeft = block.x;
-                    const blockRight = block.x + block.width;
-                    
-                    // Check for horizontal overlap with proper logic
-                    // Two ranges overlap if: left1 < right2 AND left2 < right1
-                    const overlaps = blockLeft < colRight && colLeft < blockRight;
-                    
-                    if (overlaps) {
-                        col.blocks.push(block);
-                        placed = true;
-                        break;
-                    }
-                }
-                if (!placed) {
-                    columns.push({ blocks: [block] });
-                }
-            }
-            
-            // Only proceed if we have exactly 2 columns (classic vertical span scenario)
-            if (columns.length !== 2) {
-                return topLevelBlocks;
-            }
-            
-            // Process each column to detect vertical spans
-            const resultBlocks = [];
-            let invisibleParentCounter = 1;
-            
-            for (const column of columns) {
-                if (column.blocks.length <= 1) {
-                    // Single block column, check if it spans multiple row heights
-                    if (column.blocks.length === 1) {
-                        resultBlocks.push(column.blocks[0]);
-                    }
-                    continue;
-                }
-                
-                // Sort blocks in column by Y position
-                column.blocks.sort((a, b) => a.y - b.y);
-                
-                // Check if this column has blocks that could be grouped opposite a spanning block
-                // Look for 2 or more blocks that are vertically stacked
-                const avgBlockHeight = column.blocks.reduce((sum, b) => sum + b.height, 0) / column.blocks.length;
-                
-                // Check if the other column has a single tall block
-                const otherColumn = columns.find(c => c !== column);
-                const hasSpanningBlock = otherColumn && otherColumn.blocks.length === 1 && 
-                                       otherColumn.blocks[0].height > avgBlockHeight * 1.5;
-                
-                if (hasSpanningBlock && column.blocks.length >= 2) {
-                    // Create invisible parent for this column's blocks
-                    const invisibleParentId = `InvisibleParent${invisibleParentCounter++}`;
-                    const invisibleParent = {
-                        id: invisibleParentId,
-                        text: '', // Empty text makes it invisible
-                        parentId: null,
-                         // Position and size should encompass all column children so
-                         // downstream layout/column inference can still compute grid spans.
-                         x: Math.min(...column.blocks.map(b => b.x)),
-                         y: Math.min(...column.blocks.map(b => b.y)),
-                         width: Math.max(...column.blocks.map(b => b.x + b.width)) - Math.min(...column.blocks.map(b => b.x)),
-                         height: Math.max(...column.blocks.map(b => b.y + b.height)) - Math.min(...column.blocks.map(b => b.y)),
-                        _isInvisibleParent: true
-                    };
-                    
-                    // Set parent relationship for all blocks in this column
-                    column.blocks.forEach(block => {
-                        block.parentId = invisibleParentId;
-                    });
-                    
-                    // Add invisible parent to results
-                    resultBlocks.push(invisibleParent);
-                    // Column blocks are now children, they'll be handled by the recursive emission
+            // Convert parser output to internal grid format
+            for (const block of blocks) {
+                if (block._useGrid) {
+                    // Convert from parser grid coordinates to internal format
+                    block.row = block._gridRow || 0;
+                    block.col = block._gridCol || 0;
+                    block.rowSpan = 1;
+                    block.colSpan = block.blockWidth || 1;
                 } else {
-                    // No spanning layout detected, add all blocks as-is
-                    resultBlocks.push(...column.blocks);
+                    // For non-grid blocks (connections, etc), place at origin
+                    block.row = block.row || 0;
+                    block.col = block.col || 0;
+                    block.rowSpan = block.rowSpan || 1;
+                    block.colSpan = block.colSpan || 1;
                 }
+                
+                // Clean up parser-specific properties
+                delete block._gridRow;
+                delete block._gridCol;
+                delete block._useGrid;
+                delete block.blockWidth;
             }
             
-            return resultBlocks;
+            // Handle parent-child relationships in grid coordinates
+            const parentMap = new Map();
+            blocks.forEach(b => {
+                if (b.parentId) {
+                    if (!parentMap.has(b.parentId)) {
+                        parentMap.set(b.parentId, []);
+                    }
+                    parentMap.get(b.parentId).push(b);
+                }
+            });
+            
+            // Layout children within parents using grid coordinates
+            parentMap.forEach((children, parentId) => {
+                const parent = blocks.find(b => b.id === parentId);
+                if (!parent) return;
+                
+                // For child blocks, use relative grid positioning within parent
+                children.forEach((child, index) => {
+                    // Simple linear layout within parent for now
+                    child.row = parent.row;
+                    child.col = parent.col + index;
+                    child.rowSpan = 1;
+                    child.colSpan = 1;
+                });
+                
+                // Ensure parent spans enough to contain all children
+                if (children.length > 0) {
+                    const maxChildCol = Math.max(...children.map(c => c.col + c.colSpan));
+                    parent.colSpan = Math.max(parent.colSpan, maxChildCol - parent.col);
+                }
+            });
+            
+            return blocks;
         }
+
+        // --- Mermaid Generator ---
 
         function generateMermaidBlockDiagram(blockList) {
             // Normalize input to get all blocks (use global blocks if available)
@@ -2161,6 +2654,7 @@
                             currentGridCol = leadingSpaces;
                         }
                         
+                        // TOP-LEVEL PROCESSING: Use original blockWidth for spans
                         for (const child of rowBlocks) {
                             // Convert pixel position to grid column (0-based from global left)
                             const blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
@@ -2177,11 +2671,13 @@
                             if (isContainer(child.id)) {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                rowTokens.push(`block:${child.id}${labelText}`);
+                                const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                                // Preferred syntax: block:ID["Label"]:N (width after the label)
+                                rowTokens.push(`block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`);
                             } else {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                const spanText = blockGridSpan > 1 ? `:${blockGridSpan}` : '';
+                                const spanText = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
                                 rowTokens.push(`${child.id}${spanText}${labelText}`);
                             }
                             
@@ -2201,31 +2697,31 @@
                             lines.push(`${indent}${rowTokens.join(' ')}`);
                         } else {
                             // Fall back to individual block handling for rows with containers.
-                            // However, preserve any leading space tokens by prefixing the
-                            // first emitted child line with the leadingSpaceToken.
-                            let usedLeading = false;
+                            // For containers, emit leading spaces as separate lines to ensure proper parsing.
+                            if (leadingSpaces > 0) {
+                                lines.push(`${indent}${leadingSpaceToken}`);
+                            }
+                            
                             for (const child of rowBlocks) {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
                                 const span = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
+                                // Determine container span in grid units from computed width
+                                const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
 
-                                // Build the base token (without indent)
-                                const baseToken = isContainer(child.id) ? `block:${child.id}${labelText}` : `${child.id}${span}${labelText}`;
-
-                                // Only insert a leading-space prefix when this row
-                                // contains a single block — this covers the common
-                                // 'single parent in its own row' case without
-                                // changing multi-block row semantics.
-                                if (!usedLeading && leadingSpaces > 0 && rowBlocks.length === 1) {
-                                     lines.push(`${indent}${leadingSpaceToken} ${baseToken}`);
-                                     usedLeading = true;
-                                 } else {
-                                     lines.push(`${indent}${baseToken}`);
-                                 }
+                                // Build the base token (without indent) using preferred syntax for containers
+                                const baseToken = isContainer(child.id)
+                                    ? `block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`
+                                    : `${child.id}${span}${labelText}`;
+                                lines.push(`${indent}${baseToken}`);
 
                                 // If this child is a container, emit its nested content
                                 if (isContainer(child.id)) {
-                                    const childContent = generateFor(child.id, indent + '  ', totalColumns);
+                                    // Emit a columns directive inside the container equal to its width (in grid units)
+                                    const innerCols = Number.isFinite(containerSpan) && containerSpan >= 1 ? containerSpan : 1;
+                                    lines.push(`${indent}  columns ${innerCols}`);
+                                    // Prefer using containerSpan as the inner columns for nested generation
+                                    const childContent = generateFor(child.id, indent + '  ', containerSpan);
                                     if (childContent) {
                                         lines.push(childContent);
                                     }
@@ -2235,24 +2731,121 @@
                         }
                     }
                 } else {
-                    // For nested blocks, use simpler generation without spaces
+                    // For nested blocks, use the same grid-based spacing logic as top-level
+                    const currentGridSize = typeof gridSize !== 'undefined' ? gridSize : 100;
+                    
+                    // Group children into rows
+                    const rows = [];
+                    const rowTolerance = currentGridSize / 2; // Half grid size tolerance
+                    
                     for (const child of children) {
-                        if (isContainer(child.id)) {
-                            const label = getBlockLabel(child);
-                            const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                            lines.push(`${indent}block:${child.id}${labelText}`);
+                        let placed = false;
+                        for (const row of rows) {
+                            if (Math.abs(row.y - child.y) <= rowTolerance) {
+                                row.blocks.push(child);
+                                placed = true;
+                                break;
+                            }
+                        }
+                        if (!placed) {
+                            rows.push({ y: child.y, blocks: [child] });
+                        }
+                    }
+
+                    // Process each row with grid-based spacing (same logic as top-level)
+                    for (const row of rows) {
+                        const rowBlocks = row.blocks.slice().sort((a, b) => a.x - b.x);
+                        const rowTokens = [];
+                        
+                        // Calculate grid positions
+                        const leftmostX = Math.min(...rowBlocks.map(b => b.x));
+                        
+                        // Find the absolute leftmost position across all rows to detect leading spaces
+                        const globalLeftmostX = Math.min(...rows.flatMap(r => r.blocks.map(b => b.x)));
+                        
+                        let currentGridCol = 0;
+                        
+                        // Check for leading spaces (spaces before the first block in this row)
+                        const firstBlockGridCol = Math.round((leftmostX - globalLeftmostX) / currentGridSize);
+                        const leadingSpaces = Math.max(0, firstBlockGridCol);
+                        const leadingSpaceToken = leadingSpaces === 1 ? 'space' : `space:${leadingSpaces}`;
+                        if (leadingSpaces > 0) {
+                            rowTokens.push(leadingSpaceToken);
+                            currentGridCol = leadingSpaces;
+                        }
+                        
+                        // NESTED PROCESSING: Use original blockWidth for spans
+                        for (const child of rowBlocks) {
+                            // Convert pixel position to grid column (0-based from global left)
+                            const blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
+                            const blockGridSpan = Math.max(1, Math.round(child.width / currentGridSize));
                             
-                            const childContent = generateFor(child.id, indent + '  ', totalColumns);
-                            if (childContent) {
-                                lines.push(childContent);
+                            // Add space tokens for gaps between blocks
+                            const gapSize = blockGridCol - currentGridCol;
+                            if (gapSize > 0) {
+                                const spaceToken = gapSize === 1 ? 'space' : `space:${gapSize}`;
+                                rowTokens.push(spaceToken);
                             }
                             
-                            lines.push(`${indent}end`);
+                            // Add block token
+                            if (isContainer(child.id)) {
+                                const label = getBlockLabel(child);
+                                const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                                const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                                // Preferred syntax: block:ID["Label"]:N
+                                rowTokens.push(`block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`);
+                            } else {
+                                const label = getBlockLabel(child);
+                                const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                                const spanText = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
+                                rowTokens.push(`${child.id}${spanText}${labelText}`);
+                            }
+                            
+                            currentGridCol = blockGridCol + blockGridSpan;
+                        }
+                        
+                        // Add trailing spaces to pad the row to full column count
+                        const remainingCols = totalColumns - currentGridCol;
+                        if (remainingCols > 0) {
+                            const trailingSpaceToken = remainingCols === 1 ? 'space' : `space:${remainingCols}`;
+                            rowTokens.push(trailingSpaceToken);
+                        }
+                        
+                        // Output the row as a single line if it has only simple blocks
+                        const hasContainers = rowBlocks.some(b => isContainer(b.id));
+                        if (!hasContainers && rowTokens.length > 0) {
+                            lines.push(`${indent}${rowTokens.join(' ')}`);
                         } else {
-                            const label = getBlockLabel(child);
-                            const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                            const span = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
-                            lines.push(`${indent}${child.id}${span}${labelText}`);
+                            // Fall back to individual block handling for rows with containers
+                            // For containers, emit leading spaces as separate lines to ensure proper parsing.
+                            if (leadingSpaces > 0) {
+                                lines.push(`${indent}${leadingSpaceToken}`);
+                            }
+                            
+                            for (const child of rowBlocks) {
+                                const label = getBlockLabel(child);
+                                const labelText = label ? `["${escapeLabel(label)}"]` : '';
+                                const span = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
+                                const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
+
+                                // Build the base token (without indent) using preferred syntax for containers
+                                const baseToken = isContainer(child.id)
+                                    ? `block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`
+                                    : `${child.id}${span}${labelText}`;
+                                lines.push(`${indent}${baseToken}`);
+
+                                // If this child is a container, emit its nested content
+                                if (isContainer(child.id)) {
+                                    // Emit a columns directive always (at least columns 1)
+                                    const innerCols = Number.isFinite(containerSpan) && containerSpan >= 1 ? containerSpan : 1;
+                                    lines.push(`${indent}  columns ${innerCols}`);
+                                    const childContent = generateFor(child.id, indent + '  ', containerSpan);
+                                    if (childContent) {
+                                        lines.push(childContent);
+                                    }
+                                    lines.push(`${indent}end`);
+                                }
+                            }
                         }
                     }
                 }
@@ -2269,26 +2862,68 @@
             }
 
             // Infer columns from layout using grid units
+            // Work on a local copy of blocks where missing pixel coordinates
+            // are derived from logical grid coordinates (row/col/rowSpan/colSpan).
             let topLevelBlocks = allBlocks.filter(b => !b.parentId);
-            // Apply vertical span detection so tall/stacked layouts get grouped
-            // into InvisibleParent containers when appropriate.
-            if (typeof detectAndCreateVerticalSpans === 'function') {
-                topLevelBlocks = detectAndCreateVerticalSpans(topLevelBlocks);
-                // If the detection produced synthetic invisible parents, add them
-                // to the full allBlocks collection so the recursive generator can
-                // find them and emit their nested children correctly.
-                for (const tl of topLevelBlocks) {
-                    if (!allBlocks.some(b => b.id === tl.id)) {
-                        allBlocks.push(tl);
-                    }
+
+            // If blocks don't have pixel positions (x/y/width/height) but do have
+            // logical grid coordinates, compute them so the generator can infer
+            // columns from visual layout. We operate on clones to avoid mutating
+            // the live `blocks` array used for rendering.
+            const localAllBlocks = allBlocks.map(b => {
+                const copy = Object.assign({}, b);
+                // If logical grid coords exist, derive visual pixel coordinates from them
+                // and overwrite any stale pixel fields. This ensures the generator
+                // infers columns from the logical grid layout rather than old x/y values.
+                if (typeof copy.row === 'number' && typeof copy.col === 'number') {
+                    const pixel = gridToPixel(copy.row, copy.col);
+                    copy.x = pixel.x;
+                    copy.y = pixel.y;
+                    copy.width = (copy.colSpan || copy.blockWidth || 1) * gridSize;
+                    copy.height = (copy.rowSpan || 1) * gridSize;
+                } else if (typeof copy.x === 'number' && typeof copy.y === 'number') {
+                    // Ensure width/height are present when pixel coords exist
+                    if (typeof copy.width !== 'number') copy.width = gridSize;
+                    if (typeof copy.height !== 'number') copy.height = gridSize;
                 }
-            }
+                return copy;
+            });
+
+            // Use the local copy for downstream layout inference/generation
+            topLevelBlocks = localAllBlocks.filter(b => !b.parentId);
+            allBlocks = localAllBlocks;
+            // InvisibleParent grouping removed — use blocks as-is
             let columns = 1;
             
-            // Defensive check for test harness compatibility
-            const currentGridSize = typeof gridSize !== 'undefined' ? gridSize : 100;
+            // Prefer inferring columns from logical grid coordinates when available
+            // (this is more robust for the grid-based layout). If logical coords
+            // aren't present, fall back to inferring from pixel positions.
+            if (topLevelBlocks.length > 0 && topLevelBlocks.some(b => typeof b.row === 'number' && typeof b.col === 'number')) {
+                // Group by row index and compute rightmost column used
+                const rowsByIndex = new Map();
+                for (const block of topLevelBlocks) {
+                    const r = block.row || 0;
+                    const c = block.col || 0;
+                    const span = block.colSpan || 1;
+                    if (!rowsByIndex.has(r)) rowsByIndex.set(r, []);
+                    rowsByIndex.get(r).push({ col: c, span });
+                }
+
+                let maxColumns = 1;
+                for (const [r, rowBlocks] of rowsByIndex.entries()) {
+                    let rightmost = 0;
+                    for (const rb of rowBlocks) {
+                        rightmost = Math.max(rightmost, rb.col + rb.span);
+                    }
+                    maxColumns = Math.max(maxColumns, rightmost);
+                }
+
+                columns = maxColumns;
+            } else if (topLevelBlocks.length > 0 && typeof topLevelBlocks[0].x === 'number') {
+                // Infer columns from positioned blocks
+                // Defensive check for test harness compatibility
+                const currentGridSize = typeof gridSize !== 'undefined' ? gridSize : 100;
             
-            if (topLevelBlocks.length > 0) {
                 // Group blocks by rows to infer column count
                 const rows = [];
                 const rowTolerance = currentGridSize / 2; // Half grid size tolerance
@@ -2328,7 +2963,9 @@
                 }
                 
                 columns = maxColumns;
-                console.log('DEBUG: columns after gap-inference =', columns);
+            } else if (topLevelBlocks.length > 0 && topLevelBlocks[0]._diagramColumns) {
+                // Fallback: use original column count from parsing if visual positioning is not available
+                columns = topLevelBlocks[0]._diagramColumns;
             }
 
             // Build output using recursive generator
@@ -2374,10 +3011,14 @@
             }
             try {
                 const { title, blocks: newBlocks, connections: newConnections } = parseBlockDiagramInput(input);
+                
+                // Apply visual positioning to the parsed blocks
+                const positionedBlocks = applyBlockPositioning(newBlocks);
+                
                 // Snap loaded blocks to the app grid so they align to the squares
                 // Snap down to nearest grid cell (floor) so blocks align without growing unexpectedly
                 const snapFloor = v => Math.floor(v / gridSize) * gridSize;
-                newBlocks.forEach(b => {
+                positionedBlocks.forEach(b => {
                     if (typeof b.x === 'number') b.x = snapFloor(b.x);
                     if (typeof b.y === 'number') b.y = snapFloor(b.y);
                     if (typeof b.width === 'number') b.width = Math.max(gridSize, Math.floor(b.width / gridSize) * gridSize);
@@ -2385,7 +3026,7 @@
                 });
 
                 diagramTitleInput.value = title;
-                blocks = newBlocks;
+                blocks = positionedBlocks;
                 connections = (newConnections || []).map(c => ({ _id: c._id || `conn${connectionCounter++}`, fromId: c.fromId || c.from, toId: c.toId || c.to, label: c.label || '' }));
                 selectedBlocks.clear();
                 draw();
