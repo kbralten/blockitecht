@@ -677,6 +677,44 @@
             return true;
         }
 
+        // Find an empty position within a parent container for a child block
+        function findEmptyPositionInParent(parentId, colSpan = 1, rowSpan = 1) {
+            const parent = blocks.find(b => b.id === parentId);
+            if (!parent) return { row: 0, col: 0 };
+            
+            // Get parent's grid dimensions (in grid units, not pixels)
+            const parentCols = parent.colSpan || 1;
+            const siblings = blocks.filter(b => b.parentId === parentId);
+            
+            // Try to find an empty position within parent's column count
+            for (let row = 0; row < 50; row++) {
+                for (let col = 0; col <= parentCols - colSpan; col++) {
+                    // Check if this position is free among siblings
+                    let free = true;
+                    for (const sibling of siblings) {
+                        const siblingEndRow = sibling.row + (sibling.rowSpan || 1);
+                        const siblingEndCol = sibling.col + (sibling.colSpan || 1);
+                        const testEndRow = row + rowSpan;
+                        const testEndCol = col + colSpan;
+                        
+                        const overlaps = (
+                            row < siblingEndRow && testEndRow > sibling.row &&
+                            col < siblingEndCol && testEndCol > sibling.col
+                        );
+                        
+                        if (overlaps) {
+                            free = false;
+                            break;
+                        }
+                    }
+                    if (free) return { row, col };
+                }
+            }
+            
+            // Fallback: place at end
+            return { row: siblings.length, col: 0 };
+        }
+
         // AI features removed
 
     // --- Color Presets ---
@@ -1586,7 +1624,19 @@
                     }
                 }
 
+                const oldParent = currentBlock.parentId;
                 currentBlock.parentId = newParent ? newParent.id : null;
+                
+                // If parent changed, reposition the block to avoid overlaps with siblings
+                if (oldParent !== currentBlock.parentId && currentBlock.parentId) {
+                    const newPos = findEmptyPositionInParent(
+                        currentBlock.parentId, 
+                        currentBlock.colSpan || 1, 
+                        currentBlock.rowSpan || 1
+                    );
+                    currentBlock.row = newPos.row;
+                    currentBlock.col = newPos.col;
+                }
                 // No per-block height to adopt; row height is visual at top-level only
             } else if ((dragging || resizing) && [...dragStartStates.keys()].some(b => hasOverlap(b, new Set(dragStartStates.keys())))) {
                 dragStartStates.forEach((state, block) => Object.assign(block, state));
@@ -2654,7 +2704,7 @@
                             currentGridCol = leadingSpaces;
                         }
                         
-                        // TOP-LEVEL PROCESSING: Use original blockWidth for spans
+                        // TOP-LEVEL PROCESSING: Compute width spans from grid dimensions
                         for (const child of rowBlocks) {
                             // Convert pixel position to grid column (0-based from global left)
                             const blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
@@ -2677,8 +2727,10 @@
                             } else {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                const spanText = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
-                                rowTokens.push(`${child.id}${spanText}${labelText}`);
+                                // Use computed grid span for width, fallback to blockWidth property
+                                const actualSpan = blockGridSpan > 1 ? blockGridSpan : (child.blockWidth || 1);
+                                const spanText = actualSpan > 1 ? `:${actualSpan}` : '';
+                                rowTokens.push(`${child.id}${labelText}${spanText}`);
                             }
                             
                             currentGridCol = blockGridCol + blockGridSpan;
@@ -2705,9 +2757,11 @@
                             for (const child of rowBlocks) {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                const span = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
                                 // Determine container span in grid units from computed width
                                 const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                                // Use computed span for non-containers too
+                                const actualSpan = containerSpan > 1 ? containerSpan : (child.blockWidth || 1);
+                                const span = actualSpan > 1 ? `:${actualSpan}` : '';
 
                                 // Build the base token (without indent) using preferred syntax for containers
                                 const baseToken = isContainer(child.id)
@@ -2774,7 +2828,7 @@
                             currentGridCol = leadingSpaces;
                         }
                         
-                        // NESTED PROCESSING: Use original blockWidth for spans
+                        // NESTED PROCESSING: Compute width spans from grid dimensions
                         for (const child of rowBlocks) {
                             // Convert pixel position to grid column (0-based from global left)
                             const blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
@@ -2797,8 +2851,10 @@
                             } else {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                const spanText = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
-                                rowTokens.push(`${child.id}${spanText}${labelText}`);
+                                // Use computed grid span for width, fallback to blockWidth property
+                                const actualSpan = blockGridSpan > 1 ? blockGridSpan : (child.blockWidth || 1);
+                                const spanText = actualSpan > 1 ? `:${actualSpan}` : '';
+                                rowTokens.push(`${child.id}${labelText}${spanText}`);
                             }
                             
                             currentGridCol = blockGridCol + blockGridSpan;
@@ -2825,8 +2881,10 @@
                             for (const child of rowBlocks) {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                const span = child.blockWidth && child.blockWidth > 1 ? `:${child.blockWidth}` : '';
                                 const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                                // Use computed span for non-containers too
+                                const actualSpan = containerSpan > 1 ? containerSpan : (child.blockWidth || 1);
+                                const span = actualSpan > 1 ? `:${actualSpan}` : '';
 
                                 // Build the base token (without indent) using preferred syntax for containers
                                 const baseToken = isContainer(child.id)
@@ -2850,14 +2908,7 @@
                     }
                 }
 
-                // Process connections at this level
-                const levelConnections = getConnectionsForLevel(parentId);
-                for (const conn of levelConnections) {
-                    const arrowType = conn.arrowType || '-->';
-                    const label = conn.label ? ` : "${escapeLabel(conn.label)}"` : '';
-                    lines.push(`${indent}${conn.fromId} ${arrowType} ${conn.toId}${label}`);
-                }
-
+                // Connections are now emitted at the top level after all blocks
                 return lines.join('\n');
             }
 
@@ -2976,6 +3027,16 @@
             const content = generateFor(null, '  ', columns);
             if (content) {
                 output.push(content);
+            }
+
+            // Add all connections at the end (allows connections between any blocks)
+            if (typeof connections !== 'undefined' && connections.length > 0) {
+                output.push('');
+                for (const conn of connections) {
+                    const arrowType = conn.arrowType || '-->';
+                    const label = conn.label ? ` : "${escapeLabel(conn.label)}"` : '';
+                    output.push(`  ${conn.fromId} ${arrowType} ${conn.toId}${label}`);
+                }
             }
 
             // Add color styling if blocks have colors
