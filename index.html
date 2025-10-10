@@ -2294,7 +2294,7 @@
                     // Store logical grid position for layout system
                     _gridRow: currentRow,
                     _gridCol: currentCol,
-                    _useGrid: useGrid && !parentId,
+                    _useGrid: useGrid,
                     text: label || blockId,
                     parentId: parentId,
                     blockWidth: blockWidthFactor,
@@ -2302,13 +2302,16 @@
                 };
 
                 // Track grid advancement for logical positioning
-                if (useGrid && !parentId) {
+                if (useGrid) {
                     currentCol += blockWidthFactor;
                     if (skipNextWrap) {
                         skipNextWrap = false;
                     } else {
-                        while (currentCol >= columnCount) {
-                            currentCol -= columnCount;
+                        // For top-level blocks, wrap based on diagram columns
+                        // For nested blocks, wrapping is handled by parent's column count
+                        const effectiveColumns = parentId ? Infinity : columnCount;
+                        while (currentCol >= effectiveColumns) {
+                            currentCol -= effectiveColumns;
                             currentRow++;
                         }
                     }
@@ -2454,10 +2457,10 @@
                 }
 
                 // Tokenize the trimmed line into block tokens or space tokens so we support multiple
-                // definitions on the same line (e.g. `a["A label"] b:2 c:2 d`). This regex matches
-                // either a space token or a block token (id, optional :width, optional ["label"]).
-                // Tokenize block tokens; allow IDs containing letters, digits, underscore and hyphen
-                const tokenRegex = /(?:space(?::\d+)?)|(?:[\w-]+(?::\d+)?(?:\["[^\"]*"\])?)/g;
+                // definitions on the same line (e.g. `a["A label"] b:2["b"] c:2["c"] d`). 
+                // Match block tokens with flexible order: id:width["label"] or id["label"]:width
+                // Allow IDs containing letters, digits, underscore and hyphen
+                const tokenRegex = /space(?::\d+)?|[\w-]+(?::?\d*)?(?:\["[^\"]*"\])?(?::\d+)?/g;
                 let match;
                 const currentParent = parentStack.length > 0 ? parentStack[parentStack.length - 1] : null;
                 while ((match = tokenRegex.exec(trimmed)) !== null) {
@@ -2484,11 +2487,17 @@
                         continue;
                     }
 
-                    // Block token
+                    // Block token - handle both syntaxes:
+                    // Pattern 1: id:width["label"] (old syntax)
+                    // Pattern 2: id["label"]:width (new/preferred syntax)
+                    // Pattern 3: id:width or id["label"] or id
                     // Allow hyphens in block id (UUIDs include hyphens)
-                    const bm = token.match(/^([\w-]+)(?::(\d+))?(?:\["([^\"]+)"\])?$/);
+                    // Try to match: id, optional :width1, optional ["label"], optional :width2
+                    const bm = token.match(/^([\w-]+)(?::(\d+))?(?:\["([^\"]+)"\])?(?::(\d+))?$/);
                     if (bm) {
-                        const [, blockId, widthStr, label] = bm;
+                        const [, blockId, width1, label, width2] = bm;
+                        // Width can be in position 2 (before label) or position 4 (after label)
+                        const widthStr = width2 || width1; // Prefer width2 (after label) if both present
                         const widthFactor = widthStr ? parseInt(widthStr) : 1;
                         const blk = createBlock(blockId, label, currentParent, true, widthFactor);
                         if (color) blk.color = color;
@@ -2563,11 +2572,12 @@
                     block.colSpan = block.colSpan || 1;
                 }
                 
-                // Clean up parser-specific properties
+                // Preserve blockWidth for generator (don't delete it!)
+                // Clean up only the parser-internal properties
                 delete block._gridRow;
                 delete block._gridCol;
                 delete block._useGrid;
-                delete block.blockWidth;
+                // Keep block.blockWidth for generator to detect gaps
             }
             
             // Handle parent-child relationships in grid coordinates
@@ -2586,14 +2596,9 @@
                 const parent = blocks.find(b => b.id === parentId);
                 if (!parent) return;
                 
-                // For child blocks, use relative grid positioning within parent
-                children.forEach((child, index) => {
-                    // Simple linear layout within parent for now
-                    child.row = parent.row;
-                    child.col = parent.col + index;
-                    child.rowSpan = 1;
-                    child.colSpan = 1;
-                });
+                // Parser has already set correct grid positions (row/col) for children
+                // including space tokens. We just need to ensure parent spans enough.
+                // DO NOT recalculate child positions - that would lose space information!
                 
                 // Ensure parent spans enough to contain all children
                 if (children.length > 0) {
@@ -2706,9 +2711,22 @@
                         
                         // TOP-LEVEL PROCESSING: Compute width spans from grid dimensions
                         for (const child of rowBlocks) {
-                            // Convert pixel position to grid column (0-based from global left)
-                            const blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
-                            const blockGridSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                            // Prefer logical grid coordinates if available (from parser)
+                            // Otherwise fall back to calculating from pixel positions
+                            let blockGridCol, blockGridSpan;
+                            if (typeof child.col === 'number' && child.col >= 0) {
+                                // Use logical grid coordinates (accurate, preserves spaces)
+                                blockGridCol = child.col;
+                                blockGridSpan = child.blockWidth || child.colSpan || 1;
+                            } else if (typeof child.x === 'number') {
+                                // Fall back to pixel calculation (less accurate)
+                                blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
+                                blockGridSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                            } else {
+                                // No positioning info available, place sequentially
+                                blockGridCol = currentGridCol;
+                                blockGridSpan = 1;
+                            }
                             
                             // Add space tokens for gaps between blocks
                             const gapSize = blockGridCol - currentGridCol;
@@ -2721,15 +2739,14 @@
                             if (isContainer(child.id)) {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                                const containerSpan = blockGridSpan;
                                 // Preferred syntax: block:ID["Label"]:N (width after the label)
-                                rowTokens.push(`block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`);
+                                rowTokens.push(`block:${child.id}${labelText}${containerSpan > 1 ? `:${containerSpan}` : ''}`);
                             } else {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                // Use computed grid span for width, fallback to blockWidth property
-                                const actualSpan = blockGridSpan > 1 ? blockGridSpan : (child.blockWidth || 1);
-                                const spanText = actualSpan > 1 ? `:${actualSpan}` : '';
+                                // Use computed grid span for width
+                                const spanText = blockGridSpan > 1 ? `:${blockGridSpan}` : '';
                                 rowTokens.push(`${child.id}${labelText}${spanText}`);
                             }
                             
@@ -2766,7 +2783,7 @@
                                 // Build the base token (without indent) using preferred syntax for containers
                                 const baseToken = isContainer(child.id)
                                     ? `block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`
-                                    : `${child.id}${span}${labelText}`;
+                                    : `${child.id}${labelText}${span}`;
                                 lines.push(`${indent}${baseToken}`);
 
                                 // If this child is a container, emit its nested content
@@ -2830,9 +2847,22 @@
                         
                         // NESTED PROCESSING: Compute width spans from grid dimensions
                         for (const child of rowBlocks) {
-                            // Convert pixel position to grid column (0-based from global left)
-                            const blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
-                            const blockGridSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                            // Prefer logical grid coordinates if available (from parser)
+                            // Otherwise fall back to calculating from pixel positions
+                            let blockGridCol, blockGridSpan;
+                            if (typeof child.col === 'number' && child.col >= 0) {
+                                // Use logical grid coordinates (accurate, preserves spaces)
+                                blockGridCol = child.col;
+                                blockGridSpan = child.blockWidth || child.colSpan || 1;
+                            } else if (typeof child.x === 'number') {
+                                // Fall back to pixel calculation (less accurate)
+                                blockGridCol = Math.round((child.x - globalLeftmostX) / currentGridSize);
+                                blockGridSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                            } else {
+                                // No positioning info available, place sequentially
+                                blockGridCol = currentGridCol;
+                                blockGridSpan = 1;
+                            }
                             
                             // Add space tokens for gaps between blocks
                             const gapSize = blockGridCol - currentGridCol;
@@ -2845,15 +2875,14 @@
                             if (isContainer(child.id)) {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                const containerSpan = Math.max(1, Math.round(child.width / currentGridSize));
+                                const containerSpan = blockGridSpan;
                                 // Preferred syntax: block:ID["Label"]:N
-                                rowTokens.push(`block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`);
+                                rowTokens.push(`block:${child.id}${labelText}${containerSpan > 1 ? `:${containerSpan}` : ''}`);
                             } else {
                                 const label = getBlockLabel(child);
                                 const labelText = label ? `["${escapeLabel(label)}"]` : '';
-                                // Use computed grid span for width, fallback to blockWidth property
-                                const actualSpan = blockGridSpan > 1 ? blockGridSpan : (child.blockWidth || 1);
-                                const spanText = actualSpan > 1 ? `:${actualSpan}` : '';
+                                // Use computed grid span for width
+                                const spanText = blockGridSpan > 1 ? `:${blockGridSpan}` : '';
                                 rowTokens.push(`${child.id}${labelText}${spanText}`);
                             }
                             
@@ -2889,7 +2918,7 @@
                                 // Build the base token (without indent) using preferred syntax for containers
                                 const baseToken = isContainer(child.id)
                                     ? `block:${child.id}${labelText}${containerSpan ? `:${containerSpan}` : ''}`
-                                    : `${child.id}${span}${labelText}`;
+                                    : `${child.id}${labelText}${span}`;
                                 lines.push(`${indent}${baseToken}`);
 
                                 // If this child is a container, emit its nested content
