@@ -270,7 +270,7 @@
         /* Mermaid preview */
         #mermaid-preview-wrapper{margin-top:12px;border-top:1px solid #e5e7eb;padding-top:12px}
         #mermaid-preview-wrapper h3{margin:0 0 8px 0;font-size:0.95rem;font-weight:600}
-        #mermaid-preview{min-height:220px;border:1px dashed #e5e7eb;padding:8px;border-radius:8px;background:#fbfdff;overflow:auto}
+        #mermaid-preview{min-height:220px;border:1px dashed #e5e7eb;padding:8px;border-radius:8px;background:#fbfdff;overflow:auto;position:relative}
     /* Split layout for mermaid code and preview */
     #mermaid-section{display:flex;gap:12px;flex:1;min-height:0}
     #mermaid-code{flex:1;min-width:260px;display:flex;flex-direction:column;min-height:0}
@@ -278,8 +278,10 @@
     #markdown-output{width:100%;flex:1;min-height:0;padding:8px;border:0;border-radius:6px;background:#f8fafc;font-family:monospace;font-size:0.85rem}
     #mermaid-preview{flex:1;min-height:0}
     /* Standalone Mermaid panel fills available space when visible */
-    .mermaid-panel-standalone{display:none;margin:0 16px 16px;flex:1}
+    .mermaid-panel-standalone{display:none!important;margin:0 16px 16px;flex:1}
     .mermaid-panel-standalone .panel-body{display:flex;flex-direction:column;min-height:0}
+    /* Ensure mermaid errors don't escape */
+    #mermaid-preview svg{max-width:100%;height:auto}
     </style>
     <!-- Mermaid (for preview only) -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
@@ -2053,8 +2055,11 @@
             markdownOutput.value = output;
             // Persist canvas state whenever the markdown/diagram is updated
             saveCanvasState();
-            // Update live Mermaid preview when markdown changes
-            renderMermaidPreview(output);
+            // Only update Mermaid preview if the Mermaid tab is active
+            const mermaidPanel = document.getElementById('mermaid-panel');
+            if (mermaidPanel && mermaidPanel.style.display !== 'none') {
+                renderMermaidPreview(output);
+            }
         }
 
         // --- Mermaid preview & tab logic ---
@@ -2072,12 +2077,19 @@
                 tabMermaidBtn.classList.remove('active');
                 if (mainArea) mainArea.style.display = '';
                 if (canvasPanel) canvasPanel.style.display = '';
-                if (mermaidPanel) mermaidPanel.style.display = 'none';
+                // Force hide mermaid panel completely
+                if (mermaidPanel) {
+                    mermaidPanel.style.display = 'none';
+                    mermaidPanel.style.visibility = 'hidden';
+                }
             } else {
                 tabCanvasBtn.classList.remove('active');
                 tabMermaidBtn.classList.add('active');
                 if (mainArea) mainArea.style.display = 'none';
-                if (mermaidPanel) mermaidPanel.style.display = 'flex';
+                if (mermaidPanel) {
+                    mermaidPanel.style.display = 'flex';
+                    mermaidPanel.style.visibility = 'visible';
+                }
                 // Re-render preview to ensure it gets correct sizes after being shown
                 renderMermaidPreview(markdownOutput.value || '');
             }
