@@ -1,0 +1,122 @@
+# Blockitecht User Guide
+
+Welcome to **Blockitecht**, a visual editor for creating Mermaid block diagrams. This tool allows you to design architecture diagrams, flowcharts, and block layouts visually and instantly generates the corresponding Mermaid code.
+
+## 1. Getting Started
+
+When you open Blockitecht, you will see two main areas:
+*   **The Canvas**: The grid-based area on the left where you draw and interact with your diagram.
+*   **The Mermaid Panel**: The area on the right (toggleable via tabs) that shows the generated code and a live preview of your diagram.
+
+## 2. Working with Blocks
+
+Blocks are the fundamental units of your diagram. They snap to a logical grid system to ensure clean Mermaid output.
+
+### Creating Blocks
+To create a new block:
+1.  Click on an empty space on the canvas.
+2.  Drag your mouse to define the size of the block.
+3.  Release the mouse button. The new block will appear with the text "New Block".
+4.  You can immediately type to rename it (if selected).
+
+### Selecting Blocks
+*   **Single Select**: Click on a block to select it.
+*   **Multi-Select**: Hold `Shift` or `Ctrl` (Cmd on Mac) while clicking blocks to select multiple items.
+*   **Deselect**: Click on the empty canvas background.
+
+### Moving and Resizing
+*   **Move**: Click and drag a block to move it. Use the grid lines to align it with other blocks.
+*   **Resize**: Click a block to reveal **blue resize handles** along its edges. Drag these handles to change the width or height of the block.
+    *   *Note: Width snaps to columns, and height snaps to rows.*
+
+### Editing Text
+*   **Double-click** any block to open the text editor.
+*   Type your label. You can use multiple lines.
+*   Press `Enter` to save, or click outside the text box.
+*   *Tip: To insert a literal newline in the text validation, strictly speaking, use `Shift+Enter` if available, otherwise the system handles standard newlines.*
+
+### Deleting Blocks
+*   Select the block(s) you want to remove.
+*   Press the `Delete` or `Backspace` key.
+*   Alternatively, **Right-click** and choose **Delete Block**.
+
+---
+
+## 3. Organizing and Nesting
+
+Blockitecht supports hierarchical diagrams (blocks inside blocks).
+
+### Creating Parents and Children
+To place a block inside another (nesting):
+1.  Create or move a small block "physically" on top of a larger block.
+2.  When you release the mouse, the smaller block becomes a **child** of the larger block.
+3.  Moving the parent block will now move all its children with it.
+
+### Merging Blocks
+You can combine multiple blocks into one container:
+1.  Select multiple blocks using `Shift+Click`.
+2.  **Right-click** and choose **Merge Blocks**.
+3.  A new parent block will be created wrapping the selected items.
+
+### Splitting Blocks
+You can quickly divide a block into smaller pieces:
+1.  **Right-click** a block.
+2.  Choose **Split Horizontally** (to create two rows) or **Split Vertically** (to create two columns).
+
+---
+
+## 4. Connections (Arrows)
+
+You can draw arrows between blocks to define relationships.
+
+### Creating Connections
+1.  Click the **🔗 Arrow Mode** button in the header (or press `A` on your keyboard). The cursor will change to a crosshair.
+2.  Click the first block (Start).
+3.  Click the second block (End).
+4.  A directional arrow (`-->`) will be created joining them.
+5.  Click **Exit Arrow Mode** (or press `A`) to return to normal editing.
+
+### Editing Connections
+*   **Change Text**: Double-click directly on a connection line (or the label if it exists) to add or edit the text.
+*   **Change Type**: Right-click a connection line to open the context menu. You can switch between:
+    *   `-->` (Standard Arrow)
+    *   `---` (Line only)
+    *   `<--` (Reverse Arrow)
+*   **Delete**: Select a connection (it will turn blue) and press `Delete`, or right-click it and select **Delete Connection**.
+
+---
+
+## 5. Styling
+
+### Colors
+When you select a block, a **Color HUD** (floating toolbar) appears nearby.
+1.  Click any of the pastel color swatches to apply that color to the block (and its children).
+2.  Click the **×** button in the HUD to clear the color.
+
+You can also use the **Clear Styles** button in the top header to reset all colors in the diagram.
+
+---
+
+## 6. Managing the Diagram
+
+### Header Controls
+*   **Diagram Title**: Enter a name for your diagram in the top input field. This becomes the `# Title` in the Mermaid code.
+*   **Fit Diagram**: Use this button if you get "lost" on the canvas; it centers the view on your blocks.
+*   **Clear Canvas**: **Warning** - this removes all blocks and connections to start fresh.
+
+### Loading and Saving
+*   **Auto-Save**: Your diagram is automatically saved to your browser's local storage. You won't lose work if you refresh the page.
+*   **Copy Mermaid**: Click this to copy the generated code to your clipboard.
+*   **Load Block Diagram**: Click this to paste existing Mermaid block diagram code. The tool will parse it and visualize it on the canvas.
+
+### Settings
+Click the **Gear Icon** in the header to access settings:
+*   **Show Ghost Spaces**: Toggles the visibility of dashed outlines that show where "space" tokens are being generated by the layout engine.
+*   **Start Tag**: Choose between `block` (standard) or `block-beta` (newer syntax) for the generated code header.
+
+---
+
+## 7. Tips for Mermaid Users
+*   **Grid System**: Blockitecht uses a logical grid to ensure compatibility with Mermaid's column-based layout. If you place a block "between" columns, it will snap to the nearest valid column.
+*   **Order Matters**: In Mermaid, the order of blocks in the text defines their layout order. Moving blocks left/right or up/down on the canvas rearranges the generated code to match your visual layout.
+*   **Spaces**: If you see "Ghost Spaces" (dashed boxes) on the canvas, these represent `space` tokens required to maintain your layout structure in Mermaid.
