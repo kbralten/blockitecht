@@ -78,22 +78,8 @@ You can draw arrows between blocks to define relationships.
 
 ### Editing Connections
 *   **Change Text**: Double-click directly on a connection line (or the label if it exists) to add or edit the text.
-*   **Change Type**: Right-click a connection line to open the context menu. You can switch between:
-    *   `-->` (Standard Arrow)
-    *   `---` (Line only)
-    *   `<--` (Reverse Arrow)
+*   **Reverse Direction**: Right-click a connection line and select **Reverse Arrow** to swap the source and target blocks (e.g., `A-->B` becomes `B-->A`).
 *   **Delete**: Select a connection (it will turn blue) and press `Delete`, or right-click it and select **Delete Connection**.
-
----
-
-## 5. Styling
-
-### Colors
-When you select a block, a **Color HUD** (floating toolbar) appears nearby.
-1.  Click any of the pastel color swatches to apply that color to the block (and its children).
-2.  Click the **×** button in the HUD to clear the color.
-
-You can also use the **Clear Styles** button in the top header to reset all colors in the diagram.
 
 ---
 

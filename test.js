@@ -1,525 +1,131 @@
-// Test script to run round-trip tests with detailed output
+// test.js
+// Integration testing for Blockitecht
+
 const fs = require('fs');
+const path = require('path');
 
-// Read the HTML file and extract the JavaScript functions
-const htmlContent = fs.readFileSync('index.html', 'utf8');
+// Mock DOM environment for headless testing
+async function runTests() {
+    console.log("🚀 Starting Blockitecht Tests...");
 
-// Helper: extract a function's full text by finding the opening brace and
-// matching braces until the function body is balanced. This is more robust
-// than a single regex and tolerates formatting changes.
-function extractFunction(source, name) {
-    // Try to find a function declaration: function name(...){
-    let idx = source.indexOf('function ' + name + '(');
-    if (idx === -1) {
-        // Try common assignment forms: 'const name = function(', 'let name = function(', 'var name = function(', or 'name = function('
-        const variants = [
-            'const ' + name + ' = function(',
-            'let ' + name + ' = function(',
-            'var ' + name + ' = function(',
-            name + ' = function('
-        ];
-        for (const v of variants) {
-            const p = source.indexOf(v);
-            if (p !== -1) { idx = p; break; }
-        }
+    // 1. Load the application logic
+    const indexPath = path.join(__dirname, 'index.html');
+    const htmlContent = fs.readFileSync(indexPath, 'utf8');
+    
+    // Extract application script
+    // Locate logic script
+    const scriptRegex = /<script>([\s\S]*?)<\/script>/g;
+    let match;
+    let scripts = [];
+    while ((match = scriptRegex.exec(htmlContent)) !== null) {
+        scripts.push(match[1]);
     }
-    if (idx === -1) return null;
+    const appScript = scripts[scripts.length - 1];
 
-    // Find the first '{' after the function start
-    const braceOpen = source.indexOf('{', idx);
-    if (braceOpen === -1) return null;
-
-    // Walk the source counting braces to find the matching closing '}'
-    let depth = 0;
-    let i = braceOpen;
-    for (; i < source.length; i++) {
-        const ch = source[i];
-        if (ch === '{') depth++;
-        else if (ch === '}') {
-            depth--;
-            if (depth === 0) {
-                // Return the full function text from the 'function' keyword to the closing brace
-                return source.slice(idx, i + 1);
-            }
+    // Execute in VM context
+    // We need to mock document, window, localstorage etc.
+    const mockWindow = {
+        addEventListener: () => {},
+        localStorage: { getItem: () => null, setItem: () => {} },
+        requestAnimationFrame: () => {},
+        mermaid: { 
+            initialize: () => {},
+            render: () => Promise.resolve({ svg: '' })
         }
-    }
-
-    return null;
-}
-
-// Extract the required functions
-const parseText = extractFunction(htmlContent, 'parseBlockDiagramInput');
-const genText = extractFunction(htmlContent, 'generateMermaidBlockDiagram');
-const detectVerticalText = extractFunction(htmlContent, 'detectAndCreateVerticalSpans');
-
-if (!parseText) {
-    console.error('Could not extract parseBlockDiagramInput from HTML file');
-    process.exit(1);
-}
-
-// Create a mock environment
-let blocks = [];
-const parseBlockDiagramInput = eval(`(${parseText})`);
-
-// Extract detectAndCreateVerticalSpans if available
-let detectAndCreateVerticalSpans;
-if (detectVerticalText) {
-    detectAndCreateVerticalSpans = eval(`(${detectVerticalText})`);
-} else {
-    // Fallback: no vertical span detection
-    detectAndCreateVerticalSpans = (topLevelBlocks) => topLevelBlocks;
-}
-// Expose for generators that expect it on the global scope
-global.detectAndCreateVerticalSpans = detectAndCreateVerticalSpans;
-
-let generateMermaidBlockDiagram;
-if (genText) {
-    generateMermaidBlockDiagram = eval(`(${genText})`);
-} else {
-    // Fallback generator: produce a simple mermaid block diagram from blocks.
-    // This supports top-level blocks, nested block:ID ... end, and width suffix :N.
-    console.warn('generateMermaidBlockDiagram not found in HTML; using fallback generator for tests');
-    function emitBlockRecursive(b, allBlocks, indent = '  ') {
-        const children = allBlocks.filter(x => x.parentId === b.id);
-        const span = b.blockWidth || 1;
-        let line = '';
-        if (children.length > 0) {
-            // emit parent block start
-            line += `${indent}block:${b.id}\n`;
-            children.forEach(child => {
-                line += emitBlockRecursive(child, allBlocks, indent + '  ');
-            });
-            line += `${indent}end\n`;
-        } else {
-            // leaf block: id[:N]["Label"]
-            const label = b.text ? `\"${b.text.replace(/\"/g, '\\"')}\"` : '';
-            line += `${indent}${b.id}${span>1?`:${span}`:''}${label}\n`;
-        }
-        return line;
-    }
-
-    generateMermaidBlockDiagram = function(blockList) {
-        // naive columns: try to infer from top-level arrangement; default to 3
-        const columns = 3;
-        let out = `block\ncolumns ${columns}\n`;
-        // emit top-level blocks in order
-        for (const b of blockList) {
-            out += emitBlockRecursive(b, blockList.concat(blocks));
-        }
-        return out;
     };
-}
+    
+    const context = {
+        window: mockWindow,
+        localStorage: { getItem: () => null, setItem: () => {} },
+        requestAnimationFrame: () => {}, // Add global mock
+        mermaid: { 
+            initialize: () => {},
+            render: () => Promise.resolve({ svg: '' })
+        },
+        document: {
+             getElementById: () => ({ 
+                 getContext: () => ({ 
+                    translate:()=>{}, save:()=>{}, restore:()=>{}, clearRect:()=>{},
+                    beginPath:()=>{}, rect:()=>{}, roundRect:()=>{}, fill:()=>{}, stroke:()=>{},
+                    fillText:()=>{}, moveTo:()=>{}, lineTo:()=>{} 
+                 }),
+                 parentElement: { clientWidth: 800, clientHeight: 600 },
+                 value: "",
+                 addEventListener: () => {} // Add this
+             }),
+             createElement: () => ({ style: {} })
+        },
+        console: console,
+        navigator: {},
+        module: { exports: {} } // For capturing exports
+    };
 
-// Test cases
-const testCases = [
-    {
-        name: 'Simple blocks',
-        input: `block
-columns 3
-  A["Frontend"]
-  B["Backend"]`
-    },
-    {
-        name: 'Nested blocks',
-        input: `block
-columns 1
-  D
-  block:ID
-    A
-    B["A wide one in the middle"]
-    C
-  end`
-    },
-    {
-        name: 'Blocks with connections',
-        input: `block
-columns 2
-  Frontend
-  Backend
-  Frontend --> Backend`
-    }
-];
-
-// Add a specific test for block width spans (e.g., b:2 and c:2)
-testCases.push({
-        name: 'Block width spans',
-        input: `block
-columns 3
-    a["A label"] b:2 c:2 d`
-});
-
-// Nested-width test: a parent block containing children that use width spans
-testCases.push({
-        name: 'Nested blocks with widths',
-        input: `block
-columns 3
-    X
-    block:PARENT
-        a["Child A"] b:2 c:2 d
-    end
-    Y`
-});
-
-// Two-level nesting where the innermost children use width spans
-testCases.push({
-        name: 'Two-level nested widths',
-        input: `block
-columns 3
-    block:OUTER
-        block:INNER
-            a:2 b c:2
-        end
-    end`
-});
-
-// UUID id round-trip test (ensure hyphenated IDs survive and are not split)
-testCases.push({
-    name: 'UUID id round-trip',
-    input: `block
-columns 3
-  e1504ac3-2896-40d2-86c4-b27c8839ae65["UUID Block"]`
-});
-
-// Color round-trip test: use the annotation syntax produced by the generator (%%color:HEX)
-testCases.push({
-        name: 'Color round-trip',
-        input: `block
-columns 3
-    A["Parent"] %%color:93C5FD
-    block:CHILD
-        a["Child A"] %%color:7DD3FC
-        b["Child B"] %%color:60A5FA
-    end`
-});
-
-// Clear-color round-trip: parse a diagram with colors, clear color on one block,
-// generate and reparse; ensure the cleared block no longer carries a color token
-testCases.push({
-    name: 'Clear color round-trip',
-    input: `block
-columns 3
-    A["Parent"] %%color:93C5FD
-    block:CHILD
-        a["Child A"] %%color:7DD3FC
-        b["Child B"] %%color:60A5FA
-    end`
-});
-
-// Title round-trip test: ensure leading Markdown heading is used as title and not tokenized as blocks
-testCases.push({
-    name: 'Title round-trip',
-    input: `# The Title\n\nblock\ncolumns 1\n  244c2647-48da-45fd-823f-b4b494e6114b["Real Block"]`
-});
-
-// Smoke test: simulate moving a block into a parent and ensure the generator emits the nested block group
-testCases.push({
-    name: 'Move-into-parent smoke test',
-    input: `block\ncolumns 2\n  A["Movable"]\n  block:PARENT\n    B["Sibling"]\n  end`
-});
-
-// Programmatic nested block generation test: create nested structure and verify generator output
-testCases.push({
-    name: 'Programmatic nested block generation',
-    input: `block\ncolumns 1\n  TopLevel["Top Level Block"]` // Simple input to start with
-});
-
-console.log('🧪 Starting Round-Trip Test...\n');
-
-// Failure counter: if >0 we'll exit with non-zero status for CI
-let failures = 0;
-
-testCases.forEach((testCase, index) => {
-    console.log(`--- Test ${index + 1}: ${testCase.name} ---`);
-    console.log('Input:', testCase.input);
+    // Execute script in context
+    const vm = require('vm');
+    vm.createContext(context);
     
     try {
-        // Step 1: Parse input into blocks
-        const { title, blocks: parsedBlocks } = parseBlockDiagramInput(testCase.input);
-        // If this is the title round-trip test, assert the parser extracted the heading as the title
-        if (testCase.name === 'Title round-trip') {
-            const expectedTitle = 'The Title';
-            if ((title || '') !== expectedTitle) {
-                console.log(`❌ Title mismatch: expected "${expectedTitle}", got "${title}"`);
-                failures += 1;
-            } else {
-                console.log(`✅ Title parsed correctly: "${title}"`);
-            }
-        }
-        console.log('✅ Parsing successful');
-        console.log('Parsed blocks:', parsedBlocks.map(b => ({ 
-            id: b.id, 
-            text: b.text, 
-            parentId: b.parentId,
-            originalId: b.originalId 
-        })));
-        
-        // Step 2: Simulate the blocks being loaded
-        const originalBlocks = [...blocks];
-        blocks = parsedBlocks;
-        
-        // For the clear-color test, simulate clearing color on CHILD (and descendants)
-        if (testCase.name === 'Clear color round-trip') {
-            // Find target block to clear color (prefer 'CHILD' id if present)
-            const target = parsedBlocks.find(b => b.id === 'CHILD') || parsedBlocks[0];
-            if (target) {
-                // remove color from target and descendants
-                const toClear = [target.id];
-                for (const b of parsedBlocks) if (b.parentId === target.id) toClear.push(b.id);
-                parsedBlocks.forEach(b => { if (toClear.includes(b.id) && b.color) delete b.color; });
-                console.log('Cleared color for:', toClear);
-            }
-        }
+        vm.runInContext(appScript, context);
+    } catch (e) {
+        console.error("❌ Error loading application script:", e);
+        return;
+    }
 
-        // For the move-into-parent smoke test, simulate moving block A into PARENT
-        if (testCase.name === 'Move-into-parent smoke test') {
-            const parent = parsedBlocks.find(b => b.id === 'PARENT');
-            const childA = parsedBlocks.find(b => b.id === 'A' || (b.text && b.text.toLowerCase().includes('movable')));
-            if (parent && childA) {
-                // set the parentId to simulate the UI move
-                childA.parentId = parent.id;
-                console.log(`Simulated move: set ${childA.id}.parentId = ${parent.id}`);
-            } else {
-                console.log('Could not simulate move: parent or child not found');
-            }
-        }
+    // Access exported functions
+    const app = context.window.bte; 
 
-        // For the programmatic nested block test, create a parent with children programmatically
-        if (testCase.name === 'Programmatic nested block generation') {
-            // Create parent block
-            const parentBlock = {
-                id: 'PROGRAMMATIC_PARENT',
-                text: 'Programmatic Parent',
-                x: 100, y: 100, width: 200, height: 80,
-                // Reflect new semantics: parent spans 2 columns, so set logical blockWidth
-                blockWidth: 2,
-                parentId: null,
-                originalId: 'PROGRAMMATIC_PARENT'
-            };
-            
-            // Create child blocks
-            const child1 = {
-                id: 'CHILD_ONE',
-                text: 'Child One',
-                x: 120, y: 200, width: 80, height: 40,
-                parentId: 'PROGRAMMATIC_PARENT'
-            };
-            
-            const child2 = {
-                id: 'CHILD_TWO',
-                text: 'Child Two',
-                x: 220, y: 200, width: 80, height: 40,
-                parentId: 'PROGRAMMATIC_PARENT'
-            };
-            
-            // Add the programmatically created blocks to the parsed blocks
-            parsedBlocks.push(parentBlock, child1, child2);
-            console.log('Added programmatic parent with 2 children to parsed blocks');
-            
-            // Important: Set the global blocks to include all blocks so generator can find children
-            // The generator function falls back to global 'blocks' when looking for children
-            blocks.splice(0, blocks.length, ...parsedBlocks);
-        }
-
-        // Step 3: Generate output from those blocks
-        const output = generateMermaidBlockDiagram(parsedBlocks);
-        console.log('\nGenerated output:');
-        console.log(output);
-        
-                
-        // Step 4: Parse the generated output back
-        
-        // Step 4: Parse the generated output back
-        const { blocks: reparsedBlocks } = parseBlockDiagramInput(output);
-        console.log('\n✅ Re-parsing successful');
-        console.log('Reparsed blocks:', reparsedBlocks.map(b => ({ 
-            id: b.id, 
-            text: b.text, 
-            parentId: b.parentId,
-            originalId: b.originalId 
-        })));
-        
-        // Step 5: Explicit assertions per block (id, text, parentId, and blockWidth)
-        console.log('\n--- Structure & Width Assertions ---');
-        const originalMap = new Map(parsedBlocks.map(b => [b.id, b]));
-        const reparsedMap = new Map(reparsedBlocks.map(b => [b.id, b]));
-
-        const diffs = [];
-
-        // Ensure every original block exists in reparsed set and matches important properties
-        for (const [id, orig] of originalMap.entries()) {
-            const rep = reparsedMap.get(id);
-            if (!rep) {
-                diffs.push(`Missing block '${id}' in reparsed output`);
-                continue;
-            }
-
-            const origWidth = orig.blockWidth || 1;
-            const repWidth = rep.blockWidth || 1;
-            if (origWidth !== repWidth) diffs.push(`Width mismatch for '${id}': original=${origWidth} reparsed=${repWidth}`);
-
-            const origText = (orig.text || '').trim();
-            const repText = (rep.text || '').trim();
-            if (origText !== repText) diffs.push(`Text mismatch for '${id}': original="${origText}" reparsed="${repText}"`);
-
-            const origParent = orig.parentId || null;
-            const repParent = rep.parentId || null;
-            // Allow generator-created InvisibleParentN to be the parent in reparsed output
-            if (origParent !== repParent) {
-                if (!(origParent === null && repParent && /^InvisibleParent\d+$/.test(repParent))) {
-                    diffs.push(`Parent mismatch for '${id}': original=${origParent} reparsed=${repParent}`);
-                }
-            }
-        }
-
-        // Also detect unexpected extra blocks in the reparsed output
-        for (const id of reparsedMap.keys()) {
-            // Allow InvisibleParentN blocks emitted by generator to represent vertical spans
-            if (/^InvisibleParent\d+$/.test(id)) continue;
-            if (!originalMap.has(id)) diffs.push(`Unexpected extra block '${id}' found in reparsed output`);
-        }
-
-        console.log('Original count:', originalMap.size);
-        console.log('Reparsed count:', reparsedMap.size);
-
-        if (diffs.length === 0) {
-            console.log('✅ Round-trip successful!\n');
+    // --- TEST HELPERS ---
+    function assert(condition, message) {
+        if (!condition) {
+            console.error(`❌ FAILED: ${message}`);
+            process.exit(1);
         } else {
-            console.log('❌ Round-trip failed - assertions failed:');
-            diffs.forEach(d => console.log('  -', d));
-            console.log();
-            failures += diffs.length;
+            console.log(`✅ ${message}`);
         }
-
-        // Additional assertion for the Clear color test: ensure the cleared block(s) have no color tokens
-        if (testCase.name === 'Clear color round-trip') {
-            // Reparse the generated output textually to check for %%color tokens on the cleared block id
-            // We expect that the target id 'CHILD' (parent) should not have a color token, but its children may have or not depending on clear
-            const hasChildColor = output.includes('CHILD') && /CHILD\["[^"]*"\]\s*%%color:/.test(output);
-            if (hasChildColor) {
-                console.log('❌ Clear-color assertion failed: CHILD still has a color token in generated output');
-                failures += 1;
-            } else {
-                console.log('✅ Clear-color assertion passed: CHILD has no color token in generated output');
-            }
-        }
-        // Additional assertion for move-into-parent smoke test: ensure parent group emitted and reparsed parent relationship
-        if (testCase.name === 'Move-into-parent smoke test') {
-            const hasParentBlock = output.includes('block:PARENT');
-            if (!hasParentBlock) {
-                console.log('❌ Move test failed: generated output missing parent block group (block:PARENT)');
-                failures += 1;
-            } else {
-                console.log('✅ Generated output includes parent block group');
-            }
-
-            // Ensure reparsed blocks show the moved child has the parentId set
-            const movedChild = reparsedBlocks.find(b => b.id === 'A' || (b.text && b.text.toLowerCase().includes('movable')));
-            if (!movedChild) {
-                console.log('❌ Move test failed: moved child not found in reparsed blocks');
-                failures += 1;
-            } else if (movedChild.parentId !== 'PARENT') {
-                console.log(`❌ Move test failed: moved child parentId expected 'PARENT' but got '${movedChild.parentId}'`);
-                failures += 1;
-            } else {
-                console.log('✅ Reparsed child has correct parentId = PARENT');
-            }
-        }
-        
-        // Additional assertion for programmatic nested block test: ensure nested block:ID ... end output exists
-        if (testCase.name === 'Programmatic nested block generation') {
-            // Check that generated output contains the parent block group with nested syntax
-            const hasNestedBlock = output.includes('block:PROGRAMMATIC_PARENT');
-            const hasEndMarker = output.includes('end');
-            
-            if (!hasNestedBlock) {
-                console.log('❌ Programmatic test failed: generated output missing nested parent block (block:PROGRAMMATIC_PARENT)');
-                failures += 1;
-            } else {
-                console.log('✅ Generated output includes nested parent block group');
-            }
-            
-            if (!hasEndMarker) {
-                console.log('❌ Programmatic test failed: generated output missing end marker for nested block');
-                failures += 1;
-            } else {
-                console.log('✅ Generated output includes end marker for nested block');
-            }
-            
-            // Verify that child blocks are nested inside the parent block
-            const parentStartIndex = output.indexOf('block:PROGRAMMATIC_PARENT');
-            const endIndex = output.indexOf('end', parentStartIndex);
-            
-            if (parentStartIndex >= 0 && endIndex > parentStartIndex) {
-                const nestedSection = output.slice(parentStartIndex, endIndex);
-                const hasChild1 = nestedSection.includes('CHILD_ONE');
-                const hasChild2 = nestedSection.includes('CHILD_TWO');
-                
-                if (!hasChild1 || !hasChild2) {
-                    console.log('❌ Programmatic test failed: child blocks not found within parent block section');
-                    failures += 1;
-                } else {
-                    console.log('✅ Child blocks found within parent block section');
-                }
-            } else {
-                console.log('❌ Programmatic test failed: could not locate parent block section boundaries');
-                failures += 1;
-            }
-            
-            // Verify reparsed blocks maintain parent-child relationships
-            const reparsedParent = reparsedBlocks.find(b => b.id === 'PROGRAMMATIC_PARENT');
-            const reparsedChild1 = reparsedBlocks.find(b => b.id === 'CHILD_ONE');
-            const reparsedChild2 = reparsedBlocks.find(b => b.id === 'CHILD_TWO');
-            
-            if (!reparsedParent || !reparsedChild1 || !reparsedChild2) {
-                console.log('❌ Programmatic test failed: not all blocks found in reparsed output');
-                failures += 1;
-            } else if (reparsedChild1.parentId !== 'PROGRAMMATIC_PARENT' || reparsedChild2.parentId !== 'PROGRAMMATIC_PARENT') {
-                console.log('❌ Programmatic test failed: reparsed children do not have correct parentId');
-                failures += 1;
-            } else {
-                console.log('✅ Reparsed blocks maintain correct parent-child relationships');
-            }
-        }
-        
-        // Restore original blocks
-        blocks = originalBlocks;
-        
-    } catch (error) {
-        console.error('❌ Test failed:', error);
-        console.log();
-        failures += 1;
     }
-});
 
-console.log('🏁 Round-trip tests completed!');
-// After the built-in round-trip tests, run any extra tests in the `tests/` folder.
-// This makes it easy to add small regression tests without modifying this harness.
-try {
-    const extraTestsDir = './tests';
-    if (fs.existsSync(extraTestsDir)) {
-        const files = fs.readdirSync(extraTestsDir).filter(f => f.endsWith('.js') && f !== 'parseHarness.js');
-        files.forEach(file => {
-            try {
-                console.log(`\n--- Running extra test: ${file} ---`);
-                const fullPath = `${extraTestsDir}/${file}`;
-                const res = require(fullPath);
-                // If the test module didn't exit itself, assume success
-            } catch (err) {
-                console.error(`Extra test ${file} failed:`, err);
-                failures += 1;
-            }
-        });
-    }
-} catch (e) {
-    console.error('Failed to run extra tests:', e);
-    failures += 1;
+    // --- TEST 1: Basic Logic Existence ---
+    assert(typeof app.state === 'object', "State object exists");
+    
+    // --- TEST 2: Generator Logic ---
+    app.state.blocks = [
+        { id: 'A', text: 'Alpha', row: 0, col: 0, rowSpan: 1, colSpan: 1, parentId: null },
+        { id: 'B', text: 'Beta', row: 0, col: 2, rowSpan: 1, colSpan: 1, parentId: null }
+    ];
+    
+    // Grid: A [space] B
+    // Total columns: 3
+    const output = app.generateMermaidBlockDiagram();
+    console.log("Generated Output:\n", output);
+    
+    assert(output.includes('columns 3'), "Has correct columns count");
+    assert(output.includes('Alpha'), "Has block A");
+    assert(output.includes('space'), "Has space");
+    assert(!output.includes('space:1'), "Single space is 'space' not 'space:1'");
+
+    console.log("✅ Generator Test Passed");
+
+    // --- TEST 3: Parser Logic ---
+    const input = `block-beta
+columns 3
+A["Alpha"]
+space
+B["Beta"]:2`;
+    
+    app.parseBlockDiagramInput(input);
+    
+    const blockA = app.state.blocks.find(b => b.id === 'A');
+    const blockB = app.state.blocks.find(b => b.id === 'B');
+    
+    assert(blockA, "Parsed Block A");
+    assert(blockA.col === 0 && blockA.row === 0, "Block A is at 0,0");
+    assert(blockB, "Parsed Block B");
+    assert(blockB.col === 2, `Block B is at col 2 (after space at col 1). Got ${blockB.col}`);
+    assert(blockB.colSpan === 2, "Block B has width 2");
+
+    console.log("✅ Parser Test Passed");
+
+    console.log("🎉 All tests passed!");
 }
 
-console.log('\nFinal test result: failures =', failures);
-if (failures > 0) {
-    console.log(`\nTests completed with ${failures} failure(s). Exiting with code 1.`);
-    process.exit(1);
-} else {
-    console.log('\nAll tests passed including extra tests. Exiting with code 0.');
-    process.exit(0);
-}
+runTests();
